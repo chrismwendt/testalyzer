@@ -34,7 +34,7 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     beta <- TVar <$> gen
     alpha <- TVar <$> gen
     alphas <- mapM (const (TVar <$> gen)) taus
-    let c0 = Just $ tau `cEq` TFun taus alpha
+    let c0 = Just $ tau `CEq` TFun taus alpha
         c1 = Just $ beta `CSubtype` alpha
         c2 = Just $ foldr1 CConj $ zipWith CSubtype taus alphas
         c3 = combineMaybes CConj (c : cs)
@@ -44,7 +44,7 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     taus <- mapM (const (TVar <$> gen)) ns
     (taue, cs) <- local (\env -> foldr (uncurry M.insert) env (zip ns taus)) $ collect e
     tau <- TVar <$> gen
-    return (tau, combineMaybes CConj [Just (tau `cEq` TFun taus taue), cs])
+    return (tau, combineMaybes CConj [Just (tau `CEq` TFun taus taue), cs])
   collect (ELet n e1 e2) = do
     (tau1, c1) <- collect e1
     (tau2, c2) <- local (M.insert n tau1) (collect e2)
@@ -56,7 +56,7 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     let env' = foldr (uncurry M.insert) env (zip names taus)
     (tau's, constraints) <- unzip <$> local (const env') (mapM collect es)
     (taue, constrainte) <- local (const env') (collect e)
-    return (taue, combineMaybes CConj (zipWith (\l r -> Just $ l `cEq` r) tau's taus ++ constrainte : constraints))
+    return (taue, combineMaybes CConj (zipWith (\l r -> Just $ l `CEq` r) tau's taus ++ constrainte : constraints))
   collect (ECase e pges) = do
     (tau, ce) <- collect e
     return (TInt, Nothing)
@@ -109,6 +109,7 @@ data T =
 
 data C =
     CSubtype T T
+  | CEq T T
   | CConj C C
   | CDisj C C
 
@@ -117,9 +118,6 @@ valType (VBool _) = TBool
 valType (VInt _) = TInt
 valType (VAtom _) = TAtom
 valType (VFloat _) = TFloat
-
-cEq :: T -> T -> C
-cEq l r = CSubtype l r `CConj` CSubtype r l
 
 combineMaybes :: (a -> a -> a) -> [Maybe a] -> Maybe a
 combineMaybes f as = case catMaybes as of
@@ -174,6 +172,7 @@ instance Show C where
   show (CSubtype l r) = "(" ++ show l ++ " < " ++ show r ++ ")"
   show (CConj l r) = "(" ++ show l ++ " ^ " ++ show r ++ ")"
   show (CDisj l r) = "(" ++ show l ++ " v " ++ show r ++ ")"
+  show (CEq l r) = "(" ++ show l ++ " = " ++ show r ++ ")"
 
 showTuple :: Show a => [a] -> String
 showTuple as = "<" ++ sep ", " as ++ ">"
