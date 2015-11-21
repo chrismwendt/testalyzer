@@ -1,0 +1,188 @@
+{-# LANGUAGE LambdaCase #-}
+
+module Lib
+    ( someFunc
+    , combineMaybes
+    ) where
+
+import Prelude hiding (showList)
+import Data.List
+import qualified Data.Map as M
+import Control.Monad.Gen
+import Control.Monad.Reader
+import Control.Monad.Except
+import Data.Maybe
+
+-- let "x" = fun("a", "b") -> case <a, b> of <true, true> -> true; end in x(3, true)
+bad = ELet "x" (EFun ["a", "b"] (ECase (ETuple [EVar "a", EVar "b"]) [(PTuple [PVal (VBool True), PVal (VBool True)], GTrue, EVal (VBool True))])) (ECall (EVar "x") [EVal (VInt 3), EVal (VBool True)])
+
+someFunc :: IO ()
+someFunc = putStrLn "someFunc"
+
+constraints :: E -> Either String (Maybe C)
+constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> collect)
+  where
+  collect :: E -> ExceptT String (GenT Integer (Reader (M.Map Name T))) (T, Maybe C)
+  collect (EVal v) = return (valType v, Nothing)
+  collect (EVar name) = asks (M.lookup name) >>= \case Just y -> return (y, Nothing)
+                                                       Nothing -> throwError $ "Undefined variable " ++ name
+  collect (ETuple es) = do (types, constraints) <- unzip <$> mapM collect es
+                           return (TTuple types, combineMaybes CConj constraints)
+  collect (ECall e es) = do
+    (tau, c) <- collect e
+    (taus, cs) <- unzip <$> mapM collect es
+    beta <- TVar <$> gen
+    alpha <- TVar <$> gen
+    alphas <- mapM (const (TVar <$> gen)) taus
+    let c0 = Just $ tau `cEq` TFun taus alpha
+        c1 = Just $ beta `CSubtype` alpha
+        c2 = Just $ foldr1 CConj $ zipWith CSubtype taus alphas
+        c3 = combineMaybes CConj (c : cs)
+    return (beta, combineMaybes CConj [c0, c1, c2, c3])
+  -- TODO restrict to (T = ((T1,...,Tn) -> Te when C)
+  collect (EFun ns e) = do
+    taus <- mapM (const (TVar <$> gen)) ns
+    (taue, cs) <- local (\env -> foldr (uncurry M.insert) env (zip ns taus)) $ collect e
+    tau <- TVar <$> gen
+    return (tau, combineMaybes CConj [Just (tau `cEq` TFun taus taue), cs])
+  collect (ELet n e1 e2) = do
+    (tau1, c1) <- collect e1
+    (tau2, c2) <- local (M.insert n tau1) (collect e2)
+    return (tau2, pure CConj <*> c1 <*> c2)
+  collect (ELetRec bs e) = do
+    let (names, es) = unzip bs
+    taus <- mapM (const $ TVar <$> gen) names
+    env <- ask
+    let env' = foldr (uncurry M.insert) env (zip names taus)
+    (tau's, constraints) <- unzip <$> local (const env') (mapM collect es)
+    (taue, constrainte) <- local (const env') (collect e)
+    return (taue, combineMaybes CConj (zipWith (\l r -> Just $ l `cEq` r) tau's taus ++ constrainte : constraints))
+  collect (ECase e pges) = do
+    (tau, ce) <- collect e
+    return (TInt, Nothing)
+
+type Name = String
+
+data E =
+    EVal V
+  | EVar Name
+  | ETuple [E]
+  | ECall E [E]
+  | EFun [Name] E
+  | ELet Name E E
+  | ELetRec [(Name, E)] E
+  | ECase E [(Pat, Guard, E)]
+
+data V =
+    VBool Bool
+  | VInt Int
+  | VAtom String
+  | VFloat Float
+
+data Pat =
+    PVal V
+  | PName Name
+  | PTuple [Pat]
+
+data Guard =
+    GAnd Guard Guard
+  | GEq Name Name
+  | GTrue
+  | GIsBool Name
+  | GIsInteger Name
+  | GIsAtom Name
+  | GIsFloat Name
+
+data T =
+    TNone
+  | TAny
+  | TVar Integer
+  | TTuple [T]
+  | TFun [T] T
+  | TUnion T T
+  | TWhen T C
+  | TVal V
+  | TBool
+  | TInt
+  | TAtom
+  | TFloat
+
+data C =
+    CSubtype T T
+  | CConj C C
+  | CDisj C C
+
+valType :: V -> T
+valType (VBool _) = TBool
+valType (VInt _) = TInt
+valType (VAtom _) = TAtom
+valType (VFloat _) = TFloat
+
+cEq :: T -> T -> C
+cEq l r = CSubtype l r `CConj` CSubtype r l
+
+combineMaybes :: (a -> a -> a) -> [Maybe a] -> Maybe a
+combineMaybes f as = case catMaybes as of
+  [] -> Nothing
+  as' -> Just $ foldr1 f as'
+
+instance Show E where
+  show (EVal v) = show v
+  show (EVar name) = name
+  show (ETuple es) = showTuple es
+  show (ECall e es) = show e ++ showList es
+  show (EFun ns e) = "fun" ++ showList ns ++ " -> " ++ show e
+  show (ELet n e1 e2) = "let " ++ show n ++ " = " ++ show e1 ++ " in " ++ show e2
+  show (ELetRec bs e) = "letrec " ++ concatMap (\(n, e) -> n ++ " = " ++ show e ++ ";") bs ++ " in " ++ show e
+  show (ECase e pges) = "case " ++ show e ++ " of " ++ concatMap (\(p, g, e) -> show p ++ " when " ++ show g ++ " -> " ++ show e ++ "; ") pges ++ "end"
+
+instance Show V where
+  show (VBool b) = if b then "true" else "false"
+  show (VInt i) = show i
+  show (VAtom s) = s
+  show (VFloat f) = show f
+
+instance Show Pat where
+  show (PVal v) = show v
+  show (PName n) = n
+  show (PTuple ps) = showTuple ps
+
+instance Show Guard where
+  show (GAnd l r) = show l ++ " and " ++ show r
+  show (GEq l r) = l ++ " = " ++ r
+  show (GTrue) = "true"
+  show (GIsBool n) = "is_bool(" ++ n ++ ")"
+  show (GIsInteger n) = "is_integer(" ++ n ++ ")"
+  show (GIsAtom n) = "is_atom(" ++ n ++ ")"
+  show (GIsFloat n) = "is_float(" ++ n ++ ")"
+
+instance Show T where
+  show (TNone) = "none()"
+  show (TAny) = "any()"
+  show (TVar v) = show v
+  show (TTuple ts) = showTuple ts
+  show (TFun ts t) = showList ts ++ " -> " ++ show t
+  show (TUnion l r) = show l ++ " U " ++ show r
+  show (TWhen t c) = show t ++ " when " ++ show c
+  show (TVal v) = show v
+  show (TBool) = "bool()"
+  show (TInt) = "int()"
+  show (TAtom) = "atom()"
+  show (TFloat) = "float()"
+
+instance Show C where
+  show (CSubtype l r) = "(" ++ show l ++ " < " ++ show r ++ ")"
+  show (CConj l r) = "(" ++ show l ++ " ^ " ++ show r ++ ")"
+  show (CDisj l r) = "(" ++ show l ++ " v " ++ show r ++ ")"
+
+showTuple :: Show a => [a] -> String
+showTuple as = "<" ++ sep ", " as ++ ">"
+
+showList :: Show a => [a] -> String
+showList as = "(" ++ sep ", " as ++ ")"
+
+showListWith :: Show a => String -> [a] -> String
+showListWith s as = "(" ++ sep s as ++ ")"
+
+sep :: Show a => String -> [a] -> String
+sep s as = intercalate s (map show as)
