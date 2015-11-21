@@ -48,7 +48,7 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
   collect (ELet n e1 e2) = do
     (tau1, c1) <- collect e1
     (tau2, c2) <- local (M.insert n tau1) (collect e2)
-    return (tau2, pure CConj <*> c1 <*> c2)
+    return (tau2, combineMaybes CConj [c1, c2])
   collect (ELetRec bs e) = do
     let (names, es) = unzip bs
     taus <- mapM (const $ TVar <$> gen) names
