@@ -159,7 +159,7 @@ instance Show Guard where
 instance Show T where
   show (TNone) = "none()"
   show (TAny) = "any()"
-  show (TVar v) = show v
+  show (TVar v) = "t" ++ show v
   show (TTuple ts) = showTuple ts
   show (TFun ts t) = showList ts ++ " -> " ++ show t
   show (TUnion l r) = show l ++ " U " ++ show r
