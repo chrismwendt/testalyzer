@@ -92,17 +92,20 @@ data E =
   | ELet Name E E
   | ELetRec [(Name, E)] E
   | ECase E [(Pat, E, E)]
+  deriving (Eq)
 
 data V =
     VBool Bool
   | VInt Int
   | VAtom String
   | VFloat Float
+  deriving (Eq)
 
 data Pat =
     PVal V
   | PName Name
   | PTuple [Pat]
+  deriving (Eq)
 
 data T =
     TNone
@@ -117,12 +120,14 @@ data T =
   | TInt
   | TAtom
   | TFloat
+  deriving (Eq)
 
 data C =
     CSubtype T T
   | CEq T T
   | CConj C C
   | CDisj C C
+  deriving (Eq)
 
 patVars :: Pat -> [Name]
 patVars (PVal _) = []
