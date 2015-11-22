@@ -65,8 +65,22 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     (taue, constrainte) <- local (const env') (collect e)
     return (taue, combineMaybes CConj (zipWith (\l r -> Just $ l `CEq` r) tau's taus ++ constrainte : constraints))
   collect (ECase e pges) = do
+    let (ps, gs, es) = unzip3 pges
     (tau, ce) <- collect e
-    return (TInt, Nothing)
+    beta <- TVar <$> gen
+    env <- ask
+    let psvars = map patVars ps
+    taus <- mapM (const (TVar <$> gen)) pges
+    let env's = map (\pi -> foldr (uncurry M.insert) env (zip pi taus)) psvars
+    (ais, cpis) <- unzip <$> mapM (\(env'i, pi, gi) -> local (const env'i) (collectPat pi gi)) (zip3 env's ps gs)
+    (bis, cbis) <- unzip <$> mapM (\(env'i, bi) -> local (const env'i) (collect bi)) (zip env's es)
+    let ci ai bi cpi cbi = combineMaybes CConj [Just (beta `CEq` bi), Just (tau `CEq` ai), cpi, cbi]
+    return (beta, combineMaybes CConj [ce, combineMaybes CDisj (zipWith4 ci ais bis cpis cbis)])
+
+  collectPat pat guard = do
+    tau <- patType pat
+    (tg, cg) <- collect guard
+    return (tau, combineMaybes CConj [cg, Just (tg `CEq` TBool)])
 
 type Name = String
 
@@ -110,6 +124,16 @@ data C =
   | CEq T T
   | CConj C C
   | CDisj C C
+
+patVars :: Pat -> [Name]
+patVars (PVal _) = []
+patVars (PName n) = [n]
+patVars (PTuple ps) = concatMap patVars ps
+
+patType :: Pat -> ExceptT String (GenT Integer (Reader (M.Map Name T))) T
+patType (PVal v) = return $ valType v
+patType (PName _) = TVar <$> gen
+patType (PTuple ps) = TTuple <$> mapM patType ps
 
 valType :: V -> T
 valType (VBool _) = TBool
