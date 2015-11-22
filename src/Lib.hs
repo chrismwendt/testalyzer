@@ -15,14 +15,16 @@ import Data.Maybe
 
 -- let "x" = fun("a", "b") -> case <a, b> of <true, true> -> true; end in x(3, true)
 bad :: E
-bad = ELet "x" (EFun ["a", "b"] (ECase (ETuple [EVar "a", EVar "b"]) [(PTuple [PVal (VBool True), PVal (VBool True)], GTrue, EVal (VBool True))])) (ECall (EVar "x") [EVal (VInt 3), EVal (VBool True)])
+bad = ELet "x" (EFun ["a", "b"] (ECase (ETuple [EVar "a", EVar "b"]) [(PTuple [PVal (VBool True), PVal (VBool True)], EVal (VBool True), EVal (VBool True))])) (ECall (EVar "x") [EVal (VInt 3), EVal (VBool True)])
 
 -- let "x" = fun("a", "b") -> case <a, b> of <3, true> -> true; end in x(3, true)
 good :: E
-good = ELet "x" (EFun ["a", "b"] (ECase (ETuple [EVar "a", EVar "b"]) [(PTuple [PVal (VInt 3), PVal (VBool True)], GTrue, EVal (VBool True))])) (ECall (EVar "x") [EVal (VInt 3), EVal (VBool True)])
+good = ELet "x" (EFun ["a", "b"] (ECase (ETuple [EVar "a", EVar "b"]) [(PTuple [PVal (VInt 3), PVal (VBool True)], EVal (VBool True), EVal (VBool True))])) (ECall (EVar "x") [EVal (VInt 3), EVal (VBool True)])
 
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
+
+-- TODO initialize environment with primitive functions like is_atom
 
 constraints :: E -> Either String (Maybe C)
 constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> collect)
@@ -76,7 +78,7 @@ data E =
   | EFun [Name] E
   | ELet Name E E
   | ELetRec [(Name, E)] E
-  | ECase E [(Pat, Guard, E)]
+  | ECase E [(Pat, E, E)]
 
 data V =
     VBool Bool
@@ -88,15 +90,6 @@ data Pat =
     PVal V
   | PName Name
   | PTuple [Pat]
-
-data Guard =
-    GAnd Guard Guard
-  | GEq Name Name
-  | GTrue
-  | GIsBool Name
-  | GIsInteger Name
-  | GIsAtom Name
-  | GIsFloat Name
 
 data T =
     TNone
@@ -149,15 +142,6 @@ instance Show Pat where
   show (PVal v) = show v
   show (PName n) = n
   show (PTuple ps) = showTuple ps
-
-instance Show Guard where
-  show (GAnd l r) = show l ++ " and " ++ show r
-  show (GEq l r) = l ++ " = " ++ r
-  show (GTrue) = "true"
-  show (GIsBool n) = "is_bool(" ++ n ++ ")"
-  show (GIsInteger n) = "is_integer(" ++ n ++ ")"
-  show (GIsAtom n) = "is_atom(" ++ n ++ ")"
-  show (GIsFloat n) = "is_float(" ++ n ++ ")"
 
 instance Show T where
   show (TNone) = "none()"
