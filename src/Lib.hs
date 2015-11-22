@@ -26,6 +26,35 @@ someFunc = putStrLn "someFunc"
 
 -- TODO initialize environment with primitive functions like is_atom
 
+solve :: C -> Sol
+solve = solve' (Just M.empty)
+  where
+  solve' Nothing _ = Nothing
+  solve' msol (CEq l r) = solve' msol (CSubtype l r `CConj` CSubtype r l)
+  solve' (Just sol) (CSubtype l r)
+    | (sol # l) `isSubtype` (sol # r) = Just sol
+    | t /= CTNone = Just $ M.insert l t sol
+    | otherwise = Nothing
+    where
+    t = (sol # l) `lub` (sol # r)
+  solve' sol conj@(CConj _ _)
+    | sol == sol' = sol
+    | otherwise = solve' sol' conj
+    where
+    sol' = solveConj sol conj
+  solve' sol (CDisj l r)
+    | null sol'= Nothing
+    | otherwise = Just $ M.unionsWith lub sol'
+    where
+    sol' = catMaybes [solve' sol l, solve' sol r]
+
+  solveConj :: Sol -> C -> Sol
+  solveConj Nothing _ = Nothing
+  solveConj sol (CConj l r) = solveConj (solve' sol l) r
+  solveConj sol c = solve' sol c
+
+  (#) sol t = fromMaybe CTAny (M.lookup t sol)
+
 constraints :: E -> Either String (Maybe C)
 constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> collect)
   where
@@ -122,12 +151,51 @@ data T =
   | TFloat
   deriving (Eq, Ord)
 
+data ConcreteType =
+    CTNone
+  | CTAny
+  | CTTuple [ConcreteType]
+  | CTFun [ConcreteType] ConcreteType
+  | CTUnion ConcreteType ConcreteType
+  | CTVal V
+  | CTBool
+  | CTInt
+  | CTAtom
+  | CTFloat
+  deriving (Eq, Ord)
+
 data C =
     CSubtype T T
   | CEq T T
   | CConj C C
   | CDisj C C
   deriving (Eq, Ord)
+
+-- environment lookups default to any()
+-- Just M.empty represents a solution that maps all type expressions to any()
+-- Nothing represents bottom, a solution that maps all type expressions to none()
+type Sol = Maybe (M.Map T ConcreteType)
+
+isStrictSubtype :: ConcreteType -> ConcreteType -> Bool
+isStrictSubtype l r | l == r = False
+isStrictSubtype other (CTUnion l r) = other `isSubtype` l || other `isSubtype` r
+isStrictSubtype CTNone _ = True
+isStrictSubtype CTAny other = False
+isStrictSubtype _ CTAny = True
+isStrictSubtype (CTTuple ls) (CTTuple rs) = length ls <= length rs && and (zipWith isSubtype ls rs) && or (zipWith isStrictSubtype ls rs)
+isStrictSubtype (CTFun largs le) (CTFun rargs re) = CTTuple rargs `isSubtype` CTTuple largs && le `isSubtype` re
+isStrictSubtype (CTUnion l r) other = l `isSubtype` other && r `isSubtype` other
+isStrictSubtype (CTVal v) other = valCType v `isStrictSubtype` other
+isStrictSubtype _ _ = False
+
+isSubtype :: ConcreteType -> ConcreteType -> Bool
+isSubtype l r = l == r || l `isStrictSubtype` r
+
+-- TODO figure out if this is correct
+lub :: ConcreteType -> ConcreteType -> ConcreteType
+lub l r | l `isSubtype` r = r
+lub l r | r `isSubtype` l = l
+lub l r = CTUnion l r
 
 patVars :: Pat -> [Name]
 patVars (PVal _) = []
@@ -144,6 +212,12 @@ valType (VBool _) = TBool
 valType (VInt _) = TInt
 valType (VAtom _) = TAtom
 valType (VFloat _) = TFloat
+
+valCType :: V -> ConcreteType
+valCType (VBool _) = CTBool
+valCType (VInt _) = CTInt
+valCType (VAtom _) = CTAtom
+valCType (VFloat _) = CTFloat
 
 combineMaybes :: (a -> a -> a) -> [Maybe a] -> Maybe a
 combineMaybes f as = case catMaybes as of
@@ -184,6 +258,18 @@ instance Show T where
   show (TInt) = "int()"
   show (TAtom) = "atom()"
   show (TFloat) = "float()"
+
+instance Show ConcreteType where
+  show (CTNone) = "none()"
+  show (CTAny) = "any()"
+  show (CTTuple ts) = showTuple ts
+  show (CTFun ts t) = showList ts ++ " -> " ++ show t
+  show (CTUnion l r) = show l ++ " U " ++ show r
+  show (CTVal v) = show v
+  show (CTBool) = "bool()"
+  show (CTInt) = "int()"
+  show (CTAtom) = "atom()"
+  show (CTFloat) = "float()"
 
 instance Show C where
   show (CSubtype l r) = "(" ++ show l ++ " < " ++ show r ++ ")"
