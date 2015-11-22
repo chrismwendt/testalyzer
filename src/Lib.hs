@@ -46,12 +46,11 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
         c2 = Just $ foldr1 CConj $ zipWith CSubtype taus alphas
         c3 = combineMaybes CConj (c : cs)
     return (beta, combineMaybes CConj [c0, c1, c2, c3])
-  -- TODO restrict to (T = ((T1,...,Tn) -> Te when C)
   collect (EFun ns e) = do
     taus <- mapM (const (TVar <$> gen)) ns
     (taue, cs) <- local (\env -> foldr (uncurry M.insert) env (zip ns taus)) $ collect e
     tau <- TVar <$> gen
-    return (tau, combineMaybes CConj [Just (tau `CEq` TFun taus taue), cs])
+    return (tau, Just (tau `CEq` (TFun taus taue `TWhen` cs)))
   collect (ELet n e1 e2) = do
     (tau1, c1) <- collect e1
     (tau2, c2) <- local (M.insert n tau1) (collect e2)
@@ -112,7 +111,7 @@ data T =
   | TTuple [T]
   | TFun [T] T
   | TUnion T T
-  | TWhen T C
+  | TWhen T (Maybe C)
   | TVal V
   | TBool
   | TInt
@@ -174,7 +173,7 @@ instance Show T where
   show (TTuple ts) = showTuple ts
   show (TFun ts t) = showList ts ++ " -> " ++ show t
   show (TUnion l r) = show l ++ " U " ++ show r
-  show (TWhen t c) = show t ++ " when " ++ show c
+  show (TWhen t c) = show t ++ " when " ++ case c of Nothing -> "{}"; Just c' -> show c'
   show (TVal v) = show v
   show (TBool) = "bool()"
   show (TInt) = "int()"
