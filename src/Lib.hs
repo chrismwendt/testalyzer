@@ -14,7 +14,11 @@ import Control.Monad.Except
 import Data.Maybe
 
 -- let "x" = fun("a", "b") -> case <a, b> of <true, true> -> true; end in x(3, true)
+bad :: E
 bad = ELet "x" (EFun ["a", "b"] (ECase (ETuple [EVar "a", EVar "b"]) [(PTuple [PVal (VBool True), PVal (VBool True)], GTrue, EVal (VBool True))])) (ECall (EVar "x") [EVal (VInt 3), EVal (VBool True)])
+
+-- let "x" = fun("a", "b") -> case <a, b> of <3, true> -> true; end in x(3, true)
+good :: E
 good = ELet "x" (EFun ["a", "b"] (ECase (ETuple [EVar "a", EVar "b"]) [(PTuple [PVal (VInt 3), PVal (VBool True)], GTrue, EVal (VBool True))])) (ECall (EVar "x") [EVal (VInt 3), EVal (VBool True)])
 
 someFunc :: IO ()
