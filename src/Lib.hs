@@ -57,7 +57,7 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   (#) sol (TTuple ts) = TTuple (map (sol #) ts)
   (#) sol (TFun ts t) = TFun (map (sol #) ts) (sol # t)
   (#) sol (TUnion l r) = TUnion (sol # l) (sol # r)
-  (#) sol (TWhen t c) = error "sol on TWhen not implemented"
+  (#) sol (TWhen t c) = TWhen (sol # t) Nothing -- TODO figure out what to do with bound constraints
   (#) sol t = t
 
 constraints :: E -> Either String (Maybe C)
