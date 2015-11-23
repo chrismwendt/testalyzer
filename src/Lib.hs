@@ -27,13 +27,13 @@ someFunc = putStrLn "someFunc"
 -- TODO initialize environment with primitive functions like is_atom
 
 solve :: C -> Sol
-solve = solve' (Just M.empty)
+solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   where
   solve' Nothing _ = Nothing
   solve' msol (CEq l r) = solve' msol (CSubtype l r `CConj` CSubtype r l)
   solve' (Just sol) (CSubtype l r)
     | (sol # l) `isSubtype` (sol # r) = Just sol
-    | t /= CTNone = Just $ M.insert l t sol
+    | t /= TNone = Just $ M.insert l t sol
     | otherwise = Nothing
     where
     t = (sol # l) `lub` (sol # r)
@@ -53,7 +53,7 @@ solve = solve' (Just M.empty)
   solveConj sol (CConj l r) = solveConj (solve' sol l) r
   solveConj sol c = solve' sol c
 
-  (#) sol t = fromMaybe CTAny (M.lookup t sol)
+  (#) sol t = fromMaybe TAny (M.lookup t sol)
 
 constraints :: E -> Either String (Maybe C)
 constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> collect)
@@ -151,19 +151,6 @@ data T =
   | TFloat
   deriving (Eq, Ord)
 
-data ConcreteType =
-    CTNone
-  | CTAny
-  | CTTuple [ConcreteType]
-  | CTFun [ConcreteType] ConcreteType
-  | CTUnion ConcreteType ConcreteType
-  | CTVal V
-  | CTBool
-  | CTInt
-  | CTAtom
-  | CTFloat
-  deriving (Eq, Ord)
-
 data C =
     CSubtype T T
   | CEq T T
@@ -171,31 +158,44 @@ data C =
   | CDisj C C
   deriving (Eq, Ord)
 
+varsInT :: T -> [T]
+varsInT v@(TVar _) = [v]
+varsInT (TTuple ts) = concatMap varsInT ts
+varsInT (TFun ts t) = concatMap varsInT ts ++ varsInT t
+varsInT (TUnion l r) = varsInT l ++ varsInT r
+varsInT (TWhen t c) = varsInT t ++ concatMap varsInC (maybeToList c)
+varsInT _ = []
+
+varsInC :: C -> [T]
+varsInC (CSubtype l r) = varsInT l ++ varsInT r
+varsInC (CEq l r) = varsInT l ++ varsInT r
+varsInC (CConj l r) = varsInC l ++ varsInC r
+varsInC (CDisj l r) = varsInC l ++ varsInC r
+
 -- environment lookups default to any()
 -- Just M.empty represents a solution that maps all type expressions to any()
 -- Nothing represents bottom, a solution that maps all type expressions to none()
-type Sol = Maybe (M.Map T ConcreteType)
+type Sol = Maybe (M.Map T T)
 
-isStrictSubtype :: ConcreteType -> ConcreteType -> Bool
+isStrictSubtype :: T -> T -> Bool
 isStrictSubtype l r | l == r = False
-isStrictSubtype other (CTUnion l r) = other `isSubtype` l || other `isSubtype` r
-isStrictSubtype CTNone _ = True
-isStrictSubtype CTAny other = False
-isStrictSubtype _ CTAny = True
-isStrictSubtype (CTTuple ls) (CTTuple rs) = length ls <= length rs && and (zipWith isSubtype ls rs) && or (zipWith isStrictSubtype ls rs)
-isStrictSubtype (CTFun largs le) (CTFun rargs re) = CTTuple rargs `isSubtype` CTTuple largs && le `isSubtype` re
-isStrictSubtype (CTUnion l r) other = l `isSubtype` other && r `isSubtype` other
-isStrictSubtype (CTVal v) other = valCType v `isStrictSubtype` other
+isStrictSubtype other (TUnion l r) = other `isSubtype` l || other `isSubtype` r
+isStrictSubtype TNone _ = True
+isStrictSubtype TAny other = False
+isStrictSubtype _ TAny = True
+isStrictSubtype (TTuple ls) (TTuple rs) = length ls <= length rs && and (zipWith isSubtype ls rs) && or (zipWith isStrictSubtype ls rs)
+isStrictSubtype (TFun largs le) (TFun rargs re) = TTuple rargs `isSubtype` TTuple largs && le `isSubtype` re
+isStrictSubtype (TUnion l r) other = l `isSubtype` other && r `isSubtype` other
 isStrictSubtype _ _ = False
 
-isSubtype :: ConcreteType -> ConcreteType -> Bool
+isSubtype :: T -> T -> Bool
 isSubtype l r = l == r || l `isStrictSubtype` r
 
 -- TODO figure out if this is correct
-lub :: ConcreteType -> ConcreteType -> ConcreteType
+lub :: T -> T -> T
 lub l r | l `isSubtype` r = r
 lub l r | r `isSubtype` l = l
-lub l r = CTUnion l r
+lub l r = TUnion l r
 
 patVars :: Pat -> [Name]
 patVars (PVal _) = []
@@ -212,12 +212,6 @@ valType (VBool _) = TBool
 valType (VInt _) = TInt
 valType (VAtom _) = TAtom
 valType (VFloat _) = TFloat
-
-valCType :: V -> ConcreteType
-valCType (VBool _) = CTBool
-valCType (VInt _) = CTInt
-valCType (VAtom _) = CTAtom
-valCType (VFloat _) = CTFloat
 
 combineMaybes :: (a -> a -> a) -> [Maybe a] -> Maybe a
 combineMaybes f as = case catMaybes as of
@@ -258,18 +252,6 @@ instance Show T where
   show (TInt) = "int()"
   show (TAtom) = "atom()"
   show (TFloat) = "float()"
-
-instance Show ConcreteType where
-  show (CTNone) = "none()"
-  show (CTAny) = "any()"
-  show (CTTuple ts) = showTuple ts
-  show (CTFun ts t) = showList ts ++ " -> " ++ show t
-  show (CTUnion l r) = show l ++ " U " ++ show r
-  show (CTVal v) = show v
-  show (CTBool) = "bool()"
-  show (CTInt) = "int()"
-  show (CTAtom) = "atom()"
-  show (CTFloat) = "float()"
 
 instance Show C where
   show (CSubtype l r) = "(" ++ show l ++ " < " ++ show r ++ ")"
