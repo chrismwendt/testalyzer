@@ -233,7 +233,7 @@ instance Show E where
   show (EVar name) = name
   show (ETuple es) = showTuple es
   show (ECall e es) = show e ++ showList es
-  show (EFun ns e) = "fun" ++ showList ns ++ " -> " ++ show e
+  show (EFun ns e) = "fun(" ++ intercalate ", " ns ++ ") -> " ++ show e
   show (ELet n e1 e2) = "let " ++ show n ++ " = " ++ show e1 ++ " in " ++ show e2
   show (ELetRec bs e) = "letrec " ++ concatMap (\(n, e) -> n ++ " = " ++ show e ++ ";") bs ++ " in " ++ show e
   show (ECase e pges) = "case " ++ show e ++ " of " ++ concatMap (\(p, g, e) -> show p ++ " when " ++ show g ++ " -> " ++ show e ++ "; ") pges ++ "end"
