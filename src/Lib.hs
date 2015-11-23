@@ -36,7 +36,7 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
     | t /= TNone = Just $ M.insert l t sol
     | otherwise = Nothing
     where
-    t = (sol # l) `lub` (sol # r)
+    t = (sol # l) `glb` (sol # r)
   solve' sol conj@(CConj _ _)
     | sol == sol' = sol
     | otherwise = solve' sol' conj
@@ -53,7 +53,12 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   solveConj sol (CConj l r) = solveConj (solve' sol l) r
   solveConj sol c = solve' sol c
 
-  (#) sol t = fromMaybe TAny (M.lookup t sol)
+  (#) sol t@(TVar _) = fromMaybe (error "y var not defined?") (M.lookup t sol)
+  (#) sol (TTuple ts) = TTuple (map (sol #) ts)
+  (#) sol (TFun ts t) = TFun (map (sol #) ts) (sol # t)
+  (#) sol (TUnion l r) = TUnion (sol # l) (sol # r)
+  (#) sol (TWhen t c) = error "sol on TWhen not implemented"
+  (#) sol t = t
 
 constraints :: E -> Either String (Maybe C)
 constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> collect)
@@ -196,6 +201,11 @@ lub :: T -> T -> T
 lub l r | l `isSubtype` r = r
 lub l r | r `isSubtype` l = l
 lub l r = TUnion l r
+
+glb :: T -> T -> T
+glb l r | l `isSubtype` r = l
+glb l r | r `isSubtype` l = r
+glb l r = TNone
 
 patVars :: Pat -> [Name]
 patVars (PVal _) = []
