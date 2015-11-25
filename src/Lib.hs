@@ -26,38 +26,46 @@ someFunc = putStrLn "someFunc"
 
 -- TODO initialize environment with primitive functions like is_atom
 
-solve :: C -> Sol
+solve :: C -> Either String Sol
 solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   where
-  solve' Nothing _ = Nothing
-  solve' msol (CEq l r) = solve' msol (CSubtype l r `CConj` CSubtype r l)
-  solve' (Just sol) (CSubtype l r)
-    | (sol # l) `isSubtype` (sol # r) = Just sol
-    | t /= TNone = Just $ M.insert l t sol
-    | otherwise = Nothing
+  solve' :: Sol -> C -> Either String Sol
+  solve' Nothing _ = Right Nothing
+  solve' (Just sol) c@(CEq l r) = case solve' (Just sol) (CSubtype l r `CConj` CSubtype r l) of
+    Left _ -> Left $ "Can't solve " ++ show c
+    Right r -> Right r
+  solve' (Just sol) c@(CSubtype l r)
+    | (sol # l) `isSubtype` (sol # r) = Right $ Just sol
+    | t /= TNone = Right $ Just $ M.insert l t sol
+    | otherwise = Left $ "Can't solve " ++ show c
     where
-    t = (sol # l) `glb` (sol # r)
-  solve' sol conj@(CConj _ _)
-    | sol == sol' = sol
-    | otherwise = solve' sol' conj
+    t = l `glb` r
+    glb :: T -> T -> T
+    glb l r | (sol # l) `isSubtype` (sol # r) = l
+    glb l r | (sol # r) `isSubtype` (sol # l) = r
+    glb l r = TNone
+  solve' sol c@(CConj l r) = do
+    sol' <- solve' sol l
+    sol'' <- solve' sol' r
+    if sol == sol''
+      then Right sol
+      else solve' sol'' c
+  solve' (Just sol) (CDisj l r) = case catMaybes <$> sequence [solve' (Just sol) l, solve' (Just sol) r] of
+    Left _ -> Left $ "Can't solve " ++ show c
+    Right r -> Right $ Just $ M.unionsWith lub r
     where
-    sol' = solveConj sol conj
-  solve' sol (CDisj l r)
-    | null sol'= Nothing
-    | otherwise = Just $ M.unionsWith lub sol'
-    where
-    sol' = catMaybes [solve' sol l, solve' sol r]
+    -- TODO figure out if this is correct
+    lub :: T -> T -> T
+    lub l r | (sol # l) `isSubtype` (sol # r) = r
+    lub l r | (sol # r) `isSubtype` (sol # l) = l
+    lub l r = TUnion l r
 
-  solveConj :: Sol -> C -> Sol
-  solveConj Nothing _ = Nothing
-  solveConj sol (CConj l r) = solveConj (solve' sol l) r
-  solveConj sol c = solve' sol c
-
-  (#) sol t@(TVar _) = fromMaybe (error "y var not defined?") (M.lookup t sol)
+  (#) sol t@(TVar _) = sol # fromMaybe (error "y var not defined?") (M.lookup t sol)
   (#) sol (TTuple ts) = TTuple (map (sol #) ts)
   (#) sol (TFun ts t) = TFun (map (sol #) ts) (sol # t)
   (#) sol (TUnion l r) = TUnion (sol # l) (sol # r)
-  (#) sol (TWhen t c) = TWhen (sol # t) Nothing -- TODO figure out what to do with bound constraints
+  -- TODO figure out what to do with bound constraints
+  -- (#) sol (TWhen t c) = TWhen (sol # t) c
   (#) sol t = t
 
 constraints :: E -> Either String (Maybe C)
@@ -84,7 +92,9 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     taus <- mapM (const (TVar <$> gen)) ns
     (taue, cs) <- local (\env -> foldr (uncurry M.insert) env (zip ns taus)) $ collect e
     tau <- TVar <$> gen
-    return (tau, Just (tau `CEq` (TFun taus taue `TWhen` cs)))
+    -- TODO figure out what to do with bound constraints
+    -- return (tau, Just (tau `CEq` (TFun taus taue `TWhen` cs)))
+    return (tau, combineMaybes CConj [Just (tau `CEq` TFun taus taue), cs])
   collect (ELet n e1 e2) = do
     (tau1, c1) <- collect e1
     (tau2, c2) <- local (M.insert n tau1) (collect e2)
@@ -148,7 +158,8 @@ data T =
   | TTuple [T]
   | TFun [T] T
   | TUnion T T
-  | TWhen T (Maybe C)
+  -- TODO figure out what to do with bound constraints
+  -- | TWhen T (Maybe C)
   | TVal V
   | TBool
   | TInt
@@ -168,7 +179,8 @@ varsInT v@(TVar _) = [v]
 varsInT (TTuple ts) = concatMap varsInT ts
 varsInT (TFun ts t) = concatMap varsInT ts ++ varsInT t
 varsInT (TUnion l r) = varsInT l ++ varsInT r
-varsInT (TWhen t c) = varsInT t ++ concatMap varsInC (maybeToList c)
+-- TODO figure out what to do with bound constraints
+-- varsInT (TWhen t c) = varsInT t ++ concatMap varsInC (maybeToList c)
 varsInT _ = []
 
 varsInC :: C -> [T]
@@ -184,6 +196,9 @@ type Sol = Maybe (M.Map T T)
 
 isStrictSubtype :: T -> T -> Bool
 isStrictSubtype l r | l == r = False
+-- TODO figure out what to do with bound constraints
+-- isStrictSubtype other (TWhen t c) = isStrictSubtype other t
+-- isStrictSubtype (TWhen t c) other = isStrictSubtype t other
 isStrictSubtype other (TUnion l r) = other `isSubtype` l || other `isSubtype` r
 isStrictSubtype TNone _ = True
 isStrictSubtype TAny other = False
@@ -195,17 +210,6 @@ isStrictSubtype _ _ = False
 
 isSubtype :: T -> T -> Bool
 isSubtype l r = l == r || l `isStrictSubtype` r
-
--- TODO figure out if this is correct
-lub :: T -> T -> T
-lub l r | l `isSubtype` r = r
-lub l r | r `isSubtype` l = l
-lub l r = TUnion l r
-
-glb :: T -> T -> T
-glb l r | l `isSubtype` r = l
-glb l r | r `isSubtype` l = r
-glb l r = TNone
 
 patVars :: Pat -> [Name]
 patVars (PVal _) = []
@@ -256,7 +260,8 @@ instance Show T where
   show (TTuple ts) = showTuple ts
   show (TFun ts t) = showList ts ++ " -> " ++ show t
   show (TUnion l r) = show l ++ " U " ++ show r
-  show (TWhen t c) = show t ++ " when " ++ case c of Nothing -> "{}"; Just c' -> show c'
+  -- TODO figure out what to do with bound constraints
+  -- show (TWhen t c) = show t ++ " when " ++ case c of Nothing -> "{}"; Just c' -> show c'
   show (TVal v) = show v
   show (TBool) = "bool()"
   show (TInt) = "int()"
