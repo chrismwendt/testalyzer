@@ -18,7 +18,6 @@ instance Show V where
   show (VBool b) = if b then "true" else "false"
   show (VInt i) = show i
   show (VAtom s) = s
-  show (VFloat f) = show f
 
 instance Show Pat where
   show (PVal v) = show v

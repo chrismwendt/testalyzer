@@ -1,5 +1,5 @@
 module Types where
-  
+
 import qualified Data.Map as M
 
 type Name = String
@@ -19,7 +19,6 @@ data V =
     VBool Bool
   | VInt Int
   | VAtom String
-  | VFloat Float
   deriving (Eq, Ord)
 
 data Pat =
