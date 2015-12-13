@@ -52,7 +52,7 @@ t = foldr1 (<>) [ rTNone  . "none()"
                 , rTAny   . "any()"
                 , rTVar   . "t" . integer
                 , rTTuple . "<" . rListSep t "," . ">"
-                , rTFun   . "!(" . rListSep t "," . ") -> " . t
+                , rTFun   . "(" . rListSep t "," . ") -> " . t
                 , rTUnion . "U " . t . " " . t
                 , rTVal   . v
                 , rTBool  . "bool()"
