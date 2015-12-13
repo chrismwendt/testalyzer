@@ -1,58 +1,84 @@
-module Grammar where
+{-# LANGUAGE TemplateHaskell, TypeOperators, OverloadedStrings #-}
+
+module Grammar (e, v, p, t, c, parseString, unparseString) where
 
 import Types
-import Data.List
-import Prelude hiding (showList)
+import Prelude hiding (showList, (.), id)
+import Control.Category ((.))
+import Text.Boomerang
+import Text.Boomerang.String
+import Text.Boomerang.Combinators
+import Text.Boomerang.TH
+import Data.Maybe
+
+$(makeBoomerangs ''E)
+$(makeBoomerangs ''V)
+$(makeBoomerangs ''Pat)
+$(makeBoomerangs ''T)
+$(makeBoomerangs ''C)
+
+name :: StringBoomerang r (String :- r)
+name = rList1 alpha
+
+rTriple :: Boomerang e tok (a :- b :- c :- r) ((a, b, c) :- r)
+rTriple = xpure (arg (arg (arg (:-))) (\a b c -> (a, b, c))) $ \(abc :- t) -> do (a, b, c) <- Just abc; Just (a :- b :- c :- t)
+
+e :: StringBoomerang r (E :- r)
+e = foldr1 (<>) [ rEVal    . v
+                , rEVar    . name
+                , rETuple  . "<" . rListSep e "," . ">"
+                , rECall   . "!" {- to avoid left recursion -} . e . "(" . rListSep e "," . ")"
+                , rEFun    . "fun(" . rListSep name "," . ") -> " . e
+                , rELet    . "let " . name . " = " . e . " in " . e
+                , rELetRec . "letrec " . rListSep (rPair . name . " = " . e) "; " . " in " . e
+                , rECase   . "case " . e . " of " . rListSep (rTriple . p . " when " . e . " -> " . e) "; " . " end"
+                ]
+
+v :: StringBoomerang r (V :- r)
+v = foldr1 (<>) [ rVBool . rBool "true" "false"
+                , rVInt  . int
+                , rVAtom . name
+                , rVInt  . int
+                ]
+
+p :: StringBoomerang r (Pat :- r)
+p = foldr1 (<>) [ rPVal   . v
+                , rPName  . name
+                , rPTuple . "<" . rListSep p "," . ">"
+                ]
+
+t :: StringBoomerang r (T :- r)
+t = foldr1 (<>) [ rTNone  . "none()"
+                , rTAny   . "any()"
+                , rTVar   . "t" . integer
+                , rTTuple . "<" . rListSep t "," . ">"
+                , rTFun   . "!(" . rListSep t "," . ") -> " . t
+                , rTUnion . "U " . t . " " . t
+                , rTVal   . v
+                , rTBool  . "bool()"
+                , rTInt   . "int()"
+                , rTAtom  . "atom()"
+                , rTFloat . "float()"
+                ]
+
+c :: StringBoomerang r (C :- r)
+c = foldr1 (<>) [ rCSubtype . "(" . t . " < " . t . ")"
+                , rCConj    . "(" . c . " ^ " . c . ")"
+                , rCDisj    . "(" . c . " v " . c . ")"
+                , rCEq      . "(" . t . " = " . t . ")"
+                ]
 
 instance Show E where
-  show (EVal v) = show v
-  show (EVar name) = name
-  show (ETuple es) = showTuple es
-  show (ECall e es) = show e ++ showList es
-  show (EFun ns e) = "fun(" ++ intercalate ", " ns ++ ") -> " ++ show e
-  show (ELet n e1 e2) = "let " ++ show n ++ " = " ++ show e1 ++ " in " ++ show e2
-  show (ELetRec bs e) = "letrec " ++ concatMap (\(n, e) -> n ++ " = " ++ show e ++ ";") bs ++ " in " ++ show e
-  show (ECase e pges) = "case " ++ show e ++ " of " ++ concatMap (\(p, g, e) -> show p ++ " when " ++ show g ++ " -> " ++ show e ++ "; ") pges ++ "end"
+  show = fromJust . unparseString e
 
 instance Show V where
-  show (VBool b) = if b then "true" else "false"
-  show (VInt i) = show i
-  show (VAtom s) = s
+  show = fromJust . unparseString v
 
 instance Show Pat where
-  show (PVal v) = show v
-  show (PName n) = n
-  show (PTuple ps) = showTuple ps
+  show = fromJust . unparseString p
 
 instance Show T where
-  show (TNone) = "none()"
-  show (TAny) = "any()"
-  show (TVar v) = "t" ++ show v
-  show (TTuple ts) = showTuple ts
-  show (TFun ts t) = showList ts ++ " -> " ++ show t
-  show (TUnion l r) = show l ++ " U " ++ show r
-  -- TODO figure out what to do with bound constraints
-  -- show (TWhen t c) = show t ++ " when " ++ case c of Nothing -> "{}"; Just c' -> show c'
-  show (TVal v) = show v
-  show (TBool) = "bool()"
-  show (TInt) = "int()"
-  show (TAtom) = "atom()"
-  show (TFloat) = "float()"
+  show = fromJust . unparseString t
 
 instance Show C where
-  show (CSubtype l r) = "(" ++ show l ++ " < " ++ show r ++ ")"
-  show (CConj l r) = "(" ++ show l ++ " ^ " ++ show r ++ ")"
-  show (CDisj l r) = "(" ++ show l ++ " v " ++ show r ++ ")"
-  show (CEq l r) = "(" ++ show l ++ " = " ++ show r ++ ")"
-
-showTuple :: Show a => [a] -> String
-showTuple as = "<" ++ sep ", " as ++ ">"
-
-showList :: Show a => [a] -> String
-showList as = "(" ++ sep ", " as ++ ")"
-
-showListWith :: Show a => String -> [a] -> String
-showListWith s as = "(" ++ sep s as ++ ")"
-
-sep :: Show a => String -> [a] -> String
-sep s as = intercalate s (map show as)
+  show = fromJust . unparseString c

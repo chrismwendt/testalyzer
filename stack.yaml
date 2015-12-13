@@ -10,6 +10,7 @@ packages:
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
   - monad-gen-0.3.0.1
+  - boomerang-1.4.5
 
 # Override default flag values for local packages and extra-deps
 flags: {}

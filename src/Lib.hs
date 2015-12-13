@@ -3,9 +3,11 @@
 module Lib
     ( someFunc
     , combineMaybes
+    , module Grammar
     ) where
 
-import Prelude hiding (showList)
+import Prelude hiding (showList, (.), id)
+import Control.Category ((.))
 import Data.List
 import qualified Data.Map as M
 import Control.Monad.Gen
@@ -15,13 +17,15 @@ import Data.Maybe
 import Types
 import Grammar
 
--- let "x" = fun("a", "b") -> case <a, b> of <true, true> -> true; end in x(3, true)
 bad :: E
-bad = ELet "x" (EFun ["a", "b"] (ECase (ETuple [EVar "a", EVar "b"]) [(PTuple [PVal (VBool True), PVal (VBool True)], EVal (VBool True), EVal (VBool True))])) (ECall (EVar "x") [EVal (VInt 3), EVal (VBool True)])
+bad = case parseString e "let x = fun(a,b) -> case <a,b> of <true,true> when true -> true end in !x(3,true)" of
+  Left r -> error $ show r
+  Right v -> v
 
--- let "x" = fun("a", "b") -> case <a, b> of <3, true> -> true; end in x(3, true)
 good :: E
-good = ELet "x" (EFun ["a", "b"] (ECase (ETuple [EVar "a", EVar "b"]) [(PTuple [PVal (VInt 3), PVal (VBool True)], EVal (VBool True), EVal (VBool True))])) (ECall (EVar "x") [EVal (VInt 3), EVal (VBool True)])
+good = case parseString e "let x = fun(a,b) -> case <a,b> of <3,true> when true -> true end in !x(3,true)" of
+  Left r -> error $ show r
+  Right v -> v
 
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
