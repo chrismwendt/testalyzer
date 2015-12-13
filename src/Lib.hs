@@ -34,12 +34,12 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   solve' :: Sol -> C -> Either String Sol
   solve' Nothing _ = Right Nothing
   solve' (Just sol) c@(CEq l r) = case solve' (Just sol) (CSubtype l r `CConj` CSubtype r l) of
-    Left _ -> Left $ "Can't solve " ++ show c
+    Left _ -> Left $ "Can't solve " ++ show c ++ " with sol " ++ show sol
     Right r -> Right r
   solve' (Just sol) c@(CSubtype l r)
     | (sol # l) `isSubtype` (sol # r) = Right $ Just sol
     | t /= TNone = Right $ Just $ M.insert l t sol
-    | otherwise = Left $ "Can't solve " ++ show c
+    | otherwise = Left $ "Can't solve " ++ show c ++ " with sol " ++ show sol
     where
     t = l `glb` r
     glb :: T -> T -> T
@@ -53,7 +53,7 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
       then Right sol
       else solve' sol'' c
   solve' (Just sol) (CDisj l r) = case catMaybes <$> sequence [solve' (Just sol) l, solve' (Just sol) r] of
-    Left _ -> Left $ "Can't solve " ++ show c
+    Left _ -> Left $ "Can't solve " ++ show c ++ " with sol " ++ show sol
     Right r -> Right $ Just $ M.unionsWith lub r
     where
     -- TODO figure out if this is correct
