@@ -1,8 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Lib
-    ( someFunc
-    , combineMaybes
+    ( combineMaybes
     , module Grammar
     ) where
 
@@ -26,9 +25,6 @@ good :: E
 good = case parseString e "let x = fun(a,b) -> case <a,b> of <3,true> when true -> true end in !x(3,true)" of
   Left r -> error $ show r
   Right v -> v
-
-someFunc :: IO ()
-someFunc = putStrLn "someFunc"
 
 -- TODO initialize environment with primitive functions like is_atom
 
