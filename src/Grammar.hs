@@ -10,6 +10,7 @@ import Text.Boomerang.String
 import Text.Boomerang.Combinators
 import Text.Boomerang.TH
 import Data.Maybe
+import Data.Char
 
 $(makeBoomerangs ''E)
 $(makeBoomerangs ''V)
@@ -18,7 +19,7 @@ $(makeBoomerangs ''T)
 $(makeBoomerangs ''C)
 
 name :: StringBoomerang r (String :- r)
-name = rList1 alpha
+name = rList1 (satisfy (\c -> ord c >= ord 'a' && ord c <= ord 'z' || c == '_'))
 
 rTriple :: Boomerang e tok (a :- b :- c :- r) ((a, b, c) :- r)
 rTriple = xpure (arg (arg (arg (:-))) (\a b c -> (a, b, c))) $ \(abc :- t) -> do (a, b, c) <- Just abc; Just (a :- b :- c :- t)
