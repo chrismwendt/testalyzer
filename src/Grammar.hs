@@ -54,7 +54,6 @@ t = foldr1 (<>) [ rTNone  . "none()"
                 , rTTuple . "<" . rListSep t "," . ">"
                 , rTFun   . "(" . rListSep t "," . ") -> " . t
                 , rTUnion . "U " . t . " " . t
-                , rTVal   . v
                 , rTBool  . "bool()"
                 , rTInt   . "int()"
                 , rTAtom  . "atom()"

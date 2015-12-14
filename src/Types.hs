@@ -36,7 +36,6 @@ data T =
   | TUnion T T
   -- TODO figure out what to do with bound constraints
   -- | TWhen T (Maybe C)
-  | TVal V
   | TBool
   | TInt
   | TAtom
