@@ -86,28 +86,29 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
   collect (ECall e es) = do
     (tau, c) <- collect e
     (taus, cs) <- unzip <$> mapM collect es
-    beta <- TVar <$> gen
-    alpha <- TVar <$> gen
-    alphas <- mapM (const (TVar <$> gen)) taus
+    beta <- tVar
+    alpha <- tVar
+    alphas <- mapM (const tVar) taus
     let c0 = Just $ tau `CEq` TFun taus alpha
         c1 = Just $ beta `CSubtype` alpha
         c2 = Just $ foldr1 CConj $ zipWith CSubtype taus alphas
         c3 = combineMaybes CConj (c : cs)
     return (beta, combineMaybes CConj [c0, c1, c2, c3])
   collect (EFun ns e) = do
-    taus <- mapM (const (TVar <$> gen)) ns
+    taus <- mapM (const tVar) ns
     (taue, cs) <- local (\env -> foldr (uncurry M.insert) env (zip ns taus)) $ collect e
-    tau <- TVar <$> gen
+    tau <- tVar
     -- TODO figure out what to do with bound constraints
     -- return (tau, Just (tau `CEq` (TFun taus taue `TWhen` cs)))
     return (tau, combineMaybes CConj [Just (tau `CEq` TFun taus taue), cs])
   collect (ELet n e1 e2) = do
     (tau1, c1) <- collect e1
     (tau2, c2) <- local (M.insert n tau1) (collect e2)
-    return (tau2, combineMaybes CConj [c1, c2])
+    trace <- tVarOf n
+    return (tau2, combineMaybes CConj [c1, c2, Just (trace `CEq` tau1)])
   collect (ELetRec bs e) = do
     let (names, es) = unzip bs
-    taus <- mapM (const $ TVar <$> gen) names
+    taus <- mapM (const tVar) names
     env <- ask
     let env' = foldr (uncurry M.insert) env (zip names taus)
     (tau's, constraints) <- unzip <$> local (const env') (mapM collect es)
@@ -116,10 +117,10 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
   collect (ECase e pges) = do
     let (ps, gs, es) = unzip3 pges
     (tau, ce) <- collect e
-    beta <- TVar <$> gen
+    beta <- tVar
     env <- ask
     let psvars = map patVars ps
-    taus <- mapM (const (TVar <$> gen)) pges
+    taus <- mapM (const tVar) pges
     let env's = map (\pi -> foldr (uncurry M.insert) env (zip pi taus)) psvars
     (ais, cpis) <- unzip <$> mapM (\(env'i, pi, gi) -> local (const env'i) (collectPat pi gi)) (zip3 env's ps gs)
     (bis, cbis) <- unzip <$> mapM (\(env'i, bi) -> local (const env'i) (collect bi)) (zip env's es)
@@ -130,6 +131,12 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     tau <- patType pat
     (tg, cg) <- collect guard
     return (tau, combineMaybes CConj [cg, Just (tg `CEq` TBool)])
+
+  tVar :: ExceptT String (GenT Integer (Reader (M.Map Name T))) T
+  tVar = TVar . show <$> gen
+
+  tVarOf :: String -> ExceptT String (GenT Integer (Reader (M.Map Name T))) T
+  tVarOf name = TVar . (name ++) . show <$> gen
 
 varsInT :: T -> [T]
 varsInT v@(TVar _) = [v]
@@ -170,7 +177,7 @@ patVars (PTuple ps) = concatMap patVars ps
 
 patType :: Pat -> ExceptT String (GenT Integer (Reader (M.Map Name T))) T
 patType (PVal v) = return $ valType v
-patType (PName _) = TVar <$> gen
+patType (PName n) = TVar . (n ++) . show <$> gen
 patType (PTuple ps) = TTuple <$> mapM patType ps
 
 valType :: V -> T

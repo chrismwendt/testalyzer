@@ -19,7 +19,7 @@ $(makeBoomerangs ''T)
 $(makeBoomerangs ''C)
 
 name :: StringBoomerang r (String :- r)
-name = rList1 (satisfy (\c -> ord c >= ord 'a' && ord c <= ord 'z' || c == '_'))
+name = rList1 (satisfy (\c -> ord c >= ord 'a' && ord c <= ord 'z' || ord c >= ord '0' && ord c <= ord '9' || c == '_'))
 
 rTriple :: Boomerang e tok (a :- b :- c :- r) ((a, b, c) :- r)
 rTriple = xpure (arg (arg (arg (:-))) (\a b c -> (a, b, c))) $ \(abc :- t) -> do (a, b, c) <- Just abc; Just (a :- b :- c :- t)
@@ -50,7 +50,7 @@ p = foldr1 (<>) [ rPVal   . v
 t :: StringBoomerang r (T :- r)
 t = foldr1 (<>) [ rTNone  . "none()"
                 , rTAny   . "any()"
-                , rTVar   . "t" . integer
+                , rTVar   . name
                 , rTTuple . "<" . rListSep t "," . ">"
                 , rTFun   . "(" . rListSep t "," . ") -> " . t
                 , rTUnion . "U " . t . " " . t

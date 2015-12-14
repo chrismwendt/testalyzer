@@ -29,7 +29,7 @@ data Pat =
 data T =
     TNone
   | TAny
-  | TVar Integer
+  | TVar Name
   | TTuple [T]
   | TFun [T] T
   | TUnion T T
