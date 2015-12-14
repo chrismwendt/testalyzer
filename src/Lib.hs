@@ -33,42 +33,46 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   where
   solve' :: Sol -> C -> Either String Sol
   solve' Nothing _ = Right Nothing
-  solve' (Just sol) c@(CEq l r) = case solve' (Just sol) (CSubtype l r `CConj` CSubtype r l) of
-    Left _ -> Left $ "Can't solve " ++ show c ++ " with sol " ++ show sol
-    Right r -> Right r
-  solve' (Just sol) c@(CSubtype l r)
-    | (sol # l) `isSubtype` (sol # r) = Right $ Just sol
-    | t /= TNone = Right $ Just $ M.insert l t sol
-    | otherwise = Left $ "Can't solve " ++ show c ++ " with sol " ++ show sol
-    where
-    t = l `glb` r
-    glb :: T -> T -> T
-    glb l r | (sol # l) `isSubtype` (sol # r) = l
-    glb l r | (sol # r) `isSubtype` (sol # l) = r
-    glb l r = TNone
+  solve' sol c@(CEq l r) = solve' sol ((l `CSubtype` r) `CConj` (r `CSubtype` l))
   solve' sol c@(CConj l r) = do
-    sol' <- solve' sol l
-    sol'' <- solve' sol' r
-    if sol == sol''
-      then Right sol
-      else solve' sol'' c
-  solve' (Just sol) (CDisj l r) = case catMaybes <$> sequence [solve' (Just sol) l, solve' (Just sol) r] of
-    Left _ -> Left $ "Can't solve " ++ show c ++ " with sol " ++ show sol
-    Right r -> Right $ Just $ M.unionsWith lub r
-    where
-    -- TODO figure out if this is correct
-    lub :: T -> T -> T
-    lub l r | (sol # l) `isSubtype` (sol # r) = r
-    lub l r | (sol # r) `isSubtype` (sol # l) = l
-    lub l r = TUnion l r
+    sol' <- solve' sol l >>= flip solve' r
+    if sol == sol' then Right sol else solve' sol' c
+  solve' sol (CDisj l r) = do
+    soll <- solve' sol l
+    solr <- solve' sol r
+    case catMaybes [soll, solr] of
+      [] -> Right Nothing
+      sols -> Right $ Just $ M.unionsWith lub sols
+
+  solve' (Just sol) c@(CSubtype l@(TVar _) r) = return $ Just $ M.insert l (glb (sol # l) (sol # r)) sol
+  solve' (Just sol) c@(CSubtype (TTuple ls) r) | (TTuple rs) <- sol # r, length ls == length rs = solve' (Just sol) $ foldr1 CConj $ zipWith CSubtype ls rs
+  solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solve' (Just sol) $ foldr1 CConj (zipWith CSubtype la ra) `CConj` (lb `CSubtype` rb)
+  solve' (Just sol) c@(CSubtype l r) | (sol # l) `isSubtype` (sol # r) = return $ Just sol
+  solve' (Just sol) c@(CSubtype _ _) = Left $ "Can't solve " ++ show c ++ " with sol " ++ show sol
 
   (#) sol t@(TVar _) = sol # fromMaybe (error "y var not defined?") (M.lookup t sol)
   (#) sol (TTuple ts) = TTuple (map (sol #) ts)
   (#) sol (TFun ts t) = TFun (map (sol #) ts) (sol # t)
-  (#) sol (TUnion l r) = TUnion (sol # l) (sol # r)
-  -- TODO figure out what to do with bound constraints
-  -- (#) sol (TWhen t c) = TWhen (sol # t) c
+  -- (#) sol (TUnion l r) = TUnion (sol # l) (sol # r)
   (#) sol t = t
+
+glb l r = fst $ pwglblub l r
+lub l r = snd $ pwglblub l r
+
+pwglblub (TVar _) _ = error "pwglblub of tvar"
+pwglblub _ (TVar _) = error "pwglblub of tvar"
+pwglblub (TUnion _ _) _ = error "pwglblub of union"
+pwglblub _ (TUnion _ _) = error "pwglblub of union"
+pwglblub l r | l == r = (l, r)
+pwglblub TAny other = (other, TAny)
+pwglblub other TAny = (other, TAny)
+pwglblub TNone other = (TNone, other)
+pwglblub other TNone = (TNone, other)
+pwglblub l r | any (`elem` [TBool, TInt]) [l, r] = (TNone, TAny)
+pwglblub (TTuple l) (TTuple r) | length l == length r = (TTuple (zipWith (\l r -> fst $ pwglblub l r) l r), TTuple (zipWith (\l r -> snd $ pwglblub l r) l r))
+pwglblub (TTuple _) _ = (TNone, TAny)
+pwglblub (TFun la lb) (TFun ra rb) | length la == length ra = (TFun (zipWith (\l r -> fst $ pwglblub l r) la ra) (fst $ pwglblub lb rb), TFun (zipWith (\l r -> snd $ pwglblub l r) la ra) (snd $ pwglblub lb rb))
+pwglblub (TFun _ _) _ = (TNone, TAny)
 
 constraints :: E -> Either String (Maybe C)
 constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> collect)
