@@ -37,7 +37,6 @@ e = foldr1 (<>) [ rEVal    . v
 v :: StringBoomerang r (V :- r)
 v = foldr1 (<>) [ rVBool . rBool "true" "false"
                 , rVInt  . int
-                , rVAtom . name
                 , rVInt  . int
                 ]
 
@@ -56,8 +55,6 @@ t = foldr1 (<>) [ rTNone  . "none()"
                 , rTUnion . "U " . t . " " . t
                 , rTBool  . "bool()"
                 , rTInt   . "int()"
-                , rTAtom  . "atom()"
-                , rTFloat . "float()"
                 ]
 
 c :: StringBoomerang r (C :- r)

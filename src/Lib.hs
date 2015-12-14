@@ -172,7 +172,6 @@ patType (PTuple ps) = TTuple <$> mapM patType ps
 valType :: V -> T
 valType (VBool _) = TBool
 valType (VInt _) = TInt
-valType (VAtom _) = TAtom
 
 combineMaybes :: (a -> a -> a) -> [Maybe a] -> Maybe a
 combineMaybes f as = case catMaybes as of

@@ -18,7 +18,6 @@ data E =
 data V =
     VBool Bool
   | VInt Int
-  | VAtom String
   deriving (Eq, Ord)
 
 data Pat =
@@ -38,8 +37,6 @@ data T =
   -- | TWhen T (Maybe C)
   | TBool
   | TInt
-  | TAtom
-  | TFloat
   deriving (Eq, Ord)
 
 data C =
