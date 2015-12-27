@@ -1,81 +1,127 @@
 {-# LANGUAGE TemplateHaskell, TypeOperators, OverloadedStrings #-}
 
-module Grammar (e, v, p, t, c, parseString, unparseString) where
+module Grammar
+    (
+      module Grammar
+    , module Text.Megaparsec
+    ) where
 
+import Prelude hiding (print, showList)
 import Types
-import Prelude hiding (showList, (.), id)
-import Control.Category ((.))
-import Text.Boomerang
-import Text.Boomerang.String
-import Text.Boomerang.Combinators
-import Text.Boomerang.TH
-import Data.Maybe
-import Data.Char
+import Text.Megaparsec hiding (parse, oneOf)
+import Text.Megaparsec.String
+import Text.Megaparsec.Lexer
+import Data.String
+import Control.Applicative
+import Data.Functor
+import Data.List
 
-$(makeBoomerangs ''E)
-$(makeBoomerangs ''V)
-$(makeBoomerangs ''Pat)
-$(makeBoomerangs ''T)
-$(makeBoomerangs ''C)
+parse :: Stream s t => Parsec s a -> s -> Either ParseError a
+parse p = runParser (p <* eof) ""
 
-name :: StringBoomerang r (String :- r)
-name = rList1 (satisfy (\c -> ord c >= ord 'a' && ord c <= ord 'z' || ord c >= ord '0' && ord c <= ord '9' || c == '_'))
+s :: String -> Parser String
+s = string
 
-rTriple :: Boomerang e tok (a :- b :- c :- r) ((a, b, c) :- r)
-rTriple = xpure (arg (arg (arg (:-))) (\a b c -> (a, b, c))) $ \(abc :- t) -> do (a, b, c) <- Just abc; Just (a :- b :- c :- t)
+listOf :: Parser a -> Parser [a]
+listOf p = between (s "(") (s ")") $ p `sepBy` s ","
 
-e :: StringBoomerang r (E :- r)
-e = foldr1 (<>) [ rEVal    . v
-                , rEVar    . name
-                , rETuple  . "<" . rListSep e "," . ">"
-                , rECall   . "!" {- to avoid left recursion -} . e . "(" . rListSep e "," . ")"
-                , rEFun    . "fun(" . rListSep name "," . ") -> " . e
-                , rELet    . "let " . name . " = " . e . " in " . e
-                , rELetRec . "letrec " . rListSep (rPair . name . " = " . e) "; " . " in " . e
-                , rECase   . "case " . e . " of " . rListSep (rTriple . p . " when " . e . " -> " . e) "; " . " end"
-                ]
+tupleOf :: Parser a -> Parser [a]
+tupleOf p = between (s "<") (s ">") $ p `sepBy` s ","
 
-v :: StringBoomerang r (V :- r)
-v = foldr1 (<>) [ rVBool . rBool "true" "false"
-                , rVInt  . int
-                , rVInt  . int
-                ]
+name :: Parser String
+name = some letterChar
 
-p :: StringBoomerang r (Pat :- r)
-p = foldr1 (<>) [ rPVal   . v
-                , rPName  . name
-                , rPTuple . "<" . rListSep p "," . ">"
-                ]
+oneOf :: [Parser a] -> Parser a
+oneOf = foldr1 (\a b -> try a <|> b)
 
-t :: StringBoomerang r (T :- r)
-t = foldr1 (<>) [ rTNone  . "none()"
-                , rTAny   . "any()"
-                , rTVar   . name
-                , rTTuple . "<" . rListSep t "," . ">"
-                , rTFun   . "(" . rListSep t "," . ") -> " . t
-                , rTUnion . "U " . t . " " . t
-                , rTBool  . "bool()"
-                , rTInt   . "int()"
-                ]
+v :: Parser V
+v = oneOf [ VInt . fromIntegral <$> integer
+          , VBool False         <$  s "false"
+          , VBool True          <$  s "true" ]
 
-c :: StringBoomerang r (C :- r)
-c = foldr1 (<>) [ rCSubtype . "(" . t . " < " . t . ")"
-                , rCConj    . "(" . c . " ^ " . c . ")"
-                , rCDisj    . "(" . c . " v " . c . ")"
-                , rCEq      . "(" . t . " = " . t . ")"
-                ]
+pat :: Parser Pat
+pat = oneOf [ PVal   <$> v
+            , PName  <$> name
+            , PTuple <$> tupleOf pat
+            ]
+
+e :: Parser E
+e = oneOf [ EVal    <$> v
+          , ETuple  <$> tupleOf e
+          , ECall   <$  s "!" <*> e <*> listOf e
+          , EFun    <$  s "fun" <*> listOf name <* s " -> " <*> e
+          , ELet    <$  s "let " <*> name <* s " = " <*> e <* s " in " <*> e
+          , ELetRec <$  s "letrec " <*> ((,) <$> name <* s " = " <*> e) `sepBy` s ";" <* s " in " <*> e
+          , ECase   <$  s "case " <*> e <* s " of " <*> ((,,) <$> pat <* s " when " <*> e <* s " -> " <*> e) `sepBy` s ";" <* s " end"
+          , EVar    <$> name
+          ]
+
+t :: Parser T
+t = oneOf [ TNone  <$  s "none()"
+          , TAny   <$  s "any()"
+          , TBool  <$  s "bool()"
+          , TInt   <$  s "int()"
+          , TVar   <$> name
+          , TTuple <$> tupleOf t
+          , TFun   <$> listOf t <* s " -> " <*> t
+          , TUnion <$  s "U " <*> t <* s " " <*> t
+          ]
+
+c :: Parser C
+c = oneOf [ uncurry CSubtype <$> t `sepPair` " < "
+          , uncurry CEq      <$> t `sepPair` " = "
+          , uncurry CConj    <$> c `sepPair` " ^ "
+          , uncurry CDisj    <$> c `sepPair` " v "
+          ]
+    where
+    sepPair v sp = (,) <$ s "(" <*> v <* s sp <*> v <* s ")"
+
+sepString :: Show a => String -> [a] -> String
+sepString s as = intercalate s (map show as)
+
+showPair :: Show a => a -> String -> a -> String
+showPair l sep r = "(" ++ show l ++ sep ++ show r ++ ")"
+
+showTuple :: Show a => [a] -> String
+showTuple as = "<" ++ sepString "," as ++ ">"
+
+showList :: Show a => [a] -> String
+showList as = "(" ++ sepString "," as ++ ")"
+
+showListWith :: Show a => String -> [a] -> String
+showListWith s as = "(" ++ sepString s as ++ ")"
 
 instance Show E where
-  show = fromJust . unparseString e
+    show (EVal v)       = show v
+    show (EVar name)    = name
+    show (ETuple es)    = showTuple es
+    show (ECall e es)   = "!" ++ show e ++ showList es
+    show (EFun ns e)    = "fun(" ++ intercalate "," ns ++ ") -> " ++ show e
+    show (ELet n e1 e2) = "let " ++ show n ++ " = " ++ show e1 ++ " in " ++ show e2
+    show (ELetRec bs e) = "letrec " ++ concatMap (\(n, e) -> n ++ " = " ++ show e ++ ";") bs ++ " in " ++ show e
+    show (ECase e pges) = "case " ++ show e ++ " of " ++ concatMap (\(p, g, e) -> show p ++ " when " ++ show g ++ " -> " ++ show e ++ ";") pges ++ "end"
 
 instance Show V where
-  show = fromJust . unparseString v
+    show (VBool b) = if b then "true" else "false"
+    show (VInt i)  = show i
 
 instance Show Pat where
-  show = fromJust . unparseString p
+    show (PVal v)    = show v
+    show (PName n)   = n
+    show (PTuple ps) = showTuple ps
 
 instance Show T where
-  show = fromJust . unparseString t
+    show (TNone)      = "none()"
+    show (TAny)       = "any()"
+    show (TVar v)     = "t" ++ show v
+    show (TTuple ts)  = showTuple ts
+    show (TFun ts t)  = showList ts ++ " -> " ++ show t
+    show (TUnion l r) = "(U " ++ show l ++ " " ++ show r
+    show (TBool)      = "bool()"
+    show (TInt)       = "int()"
 
 instance Show C where
-  show = fromJust . unparseString c
+    show (CSubtype l r) = showPair l " < " r
+    show (CEq      l r) = showPair l " = " r
+    show (CConj    l r) = showPair l " ^ " r
+    show (CDisj    l r) = showPair l " v " r

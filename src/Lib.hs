@@ -1,8 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Lib
-    ( combineMaybes
-    , module Grammar
+    ( module Grammar
     ) where
 
 import Prelude hiding (showList, (.), id)
@@ -17,12 +16,12 @@ import Types
 import Grammar
 
 bad :: E
-bad = case parseString e "let x = fun(a,b) -> case <a,b> of <true,true> when true -> true end in !x(3,true)" of
+bad = case parse e "let x = fun(a,b) -> case <a,b> of <true,true> when true -> true end in !x(3,true)" of
   Left r -> error $ show r
   Right v -> v
 
 good :: E
-good = case parseString e "let x = fun(a,b) -> case <a,b> of <3,true> when true -> true end in !x(3,true)" of
+good = case parse e "let x = fun(a,b) -> case <a,b> of <3,true> when true -> true end in !x(3,true)" of
   Left r -> error $ show r
   Right v -> v
 

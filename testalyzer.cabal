@@ -20,7 +20,7 @@ library
                      , containers
                      , monad-gen
                      , mtl
-                     , boomerang
+                     , megaparsec
   default-language:    Haskell2010
 
 executable testalyzer-exe
