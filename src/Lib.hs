@@ -15,16 +15,6 @@ import Data.Maybe
 import Types
 import Grammar
 
-bad :: E
-bad = case parse e "let x = fun(a,b) -> case <a,b> of <true,true> when true -> true end in !x(3,true)" of
-  Left r -> error $ show r
-  Right v -> v
-
-good :: E
-good = case parse e "let x = fun(a,b) -> case <a,b> of <3,true> when true -> true end in !x(3,true)" of
-  Left r -> error $ show r
-  Right v -> v
-
 -- TODO initialize environment with primitive functions like is_atom
 
 solve :: C -> Either String Sol
