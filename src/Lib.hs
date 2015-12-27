@@ -121,12 +121,12 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     let psvars = map patVars ps
     taus <- mapM (const tVar) pges
     let env's = map (\pi -> foldr (uncurry M.insert) env (zip pi taus)) psvars
-    (ais, cpis) <- unzip <$> mapM (\(env'i, pi, gi) -> local (const env'i) (collectPat pi gi)) (zip3 env's ps gs)
+    (ais, cpis) <- unzip <$> mapM (\(env'i, pi, gi) -> local (const env'i) (collectP pi gi)) (zip3 env's ps gs)
     (bis, cbis) <- unzip <$> mapM (\(env'i, bi) -> local (const env'i) (collect bi)) (zip env's es)
     let ci ai bi cpi cbi = combineMaybes CConj [Just (beta `CEq` bi), Just (tau `CEq` ai), cpi, cbi]
     return (beta, combineMaybes CConj [ce, combineMaybes CDisj (zipWith4 ci ais bis cpis cbis)])
 
-  collectPat pat guard = do
+  collectP pat guard = do
     tau <- patType pat
     (tg, cg) <- collect guard
     return (tau, combineMaybes CConj [cg, Just (tg `CEq` TBool)])
@@ -169,12 +169,12 @@ isStrictSubtype _ _ = False
 isSubtype :: T -> T -> Bool
 isSubtype l r = l == r || l `isStrictSubtype` r
 
-patVars :: Pat -> [Name]
+patVars :: P -> [Name]
 patVars (PVal _) = []
 patVars (PName n) = [n]
 patVars (PTuple ps) = concatMap patVars ps
 
-patType :: Pat -> ExceptT String (GenT Integer (Reader (M.Map Name T))) T
+patType :: P -> ExceptT String (GenT Integer (Reader (M.Map Name T))) T
 patType (PVal v) = return $ valType v
 patType (PName n) = TVar . (n ++) . show <$> gen
 patType (PTuple ps) = TTuple <$> mapM patType ps

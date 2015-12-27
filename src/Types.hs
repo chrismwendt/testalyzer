@@ -12,7 +12,7 @@ data E =
   | EFun [Name] E
   | ELet Name E E
   | ELetRec [(Name, E)] E
-  | ECase E [(Pat, E, E)]
+  | ECase E [(P, E, E)]
   deriving (Eq, Ord)
 
 data V =
@@ -20,10 +20,10 @@ data V =
   | VInt Int
   deriving (Eq, Ord)
 
-data Pat =
+data P =
     PVal V
   | PName Name
-  | PTuple [Pat]
+  | PTuple [P]
   deriving (Eq, Ord)
 
 data T =

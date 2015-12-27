@@ -39,10 +39,10 @@ v = oneOf [ VInt . fromIntegral <$> integer
           , VBool False         <$  s "false"
           , VBool True          <$  s "true" ]
 
-pat :: Parser Pat
-pat = oneOf [ PVal   <$> v
+p :: Parser P
+p = oneOf [ PVal   <$> v
             , PName  <$> name
-            , PTuple <$> tupleOf pat
+            , PTuple <$> tupleOf p
             ]
 
 e :: Parser E
@@ -52,7 +52,7 @@ e = oneOf [ EVal    <$> v
           , EFun    <$  s "fun" <*> listOf name <* s " -> " <*> e
           , ELet    <$  s "let " <*> name <* s " = " <*> e <* s " in " <*> e
           , ELetRec <$  s "letrec " <*> ((,) <$> name <* s " = " <*> e) `sepBy` s ";" <* s " in " <*> e
-          , ECase   <$  s "case " <*> e <* s " of " <*> ((,,) <$> pat <* s " when " <*> e <* s " -> " <*> e) `sepBy` s ";" <* s " end"
+          , ECase   <$  s "case " <*> e <* s " of " <*> ((,,) <$> p <* s " when " <*> e <* s " -> " <*> e) `sepBy` s ";" <* s " end"
           , EVar    <$> name
           ]
 
@@ -105,7 +105,7 @@ instance Show V where
     show (VBool b) = if b then "true" else "false"
     show (VInt i)  = show i
 
-instance Show Pat where
+instance Show P where
     show (PVal v)    = show v
     show (PName n)   = n
     show (PTuple ps) = showTuple ps
