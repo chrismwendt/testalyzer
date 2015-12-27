@@ -113,7 +113,7 @@ instance Show P where
 instance Show T where
     show (TNone)      = "none()"
     show (TAny)       = "any()"
-    show (TVar v)     = "t" ++ show v
+    show (TVar v)     = "t" ++ v
     show (TTuple ts)  = showTuple ts
     show (TFun ts t)  = showList ts ++ " -> " ++ show t
     show (TUnion l r) = "(U " ++ show l ++ " " ++ show r
