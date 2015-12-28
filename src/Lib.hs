@@ -19,7 +19,7 @@ main :: IO ()
 main = do
     a <- readFile "0.txt"
     forM_ (lines a) $ \line -> do
-        let thing = left show (parse e line) >>= constraints
+        let thing = left show (parse e line) >>= constraints >>= solve
         print thing
 
 -- TODO initialize environment with primitive functions like is_atom
@@ -29,6 +29,7 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   where
   solve' :: Sol -> C -> Either String Sol
   solve' Nothing _ = Right Nothing
+  solve' sol CTrivial = Right sol
   solve' sol c@(CEq l r) = solve' sol ((l `CSubtype` r) `CConj` (r `CSubtype` l))
   solve' sol c@(CConj l r) = do
     sol' <- solve' sol l >>= flip solve' r
@@ -70,38 +71,38 @@ pwglblub (TTuple _) _ = (TNone, TAny)
 pwglblub (TFun la lb) (TFun ra rb) | length la == length ra = (TFun (zipWith (\l r -> fst $ pwglblub l r) la ra) (fst $ pwglblub lb rb), TFun (zipWith (\l r -> snd $ pwglblub l r) la ra) (snd $ pwglblub lb rb))
 pwglblub (TFun _ _) _ = (TNone, TAny)
 
-constraints :: E -> Either String (Maybe C)
+constraints :: E -> Either String C
 constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> collect)
   where
-  collect :: E -> ExceptT String (GenT Integer (Reader (M.Map Name T))) (T, Maybe C)
-  collect (EVal v) = return (valType v, Nothing)
-  collect (EVar name) = asks (M.lookup name) >>= \case Just y -> return (y, Nothing)
+  collect :: E -> ExceptT String (GenT Integer (Reader (M.Map Name T))) (T, C)
+  collect (EVal v) = return (valType v, CTrivial)
+  collect (EVar name) = asks (M.lookup name) >>= \case Just y -> return (y, CTrivial)
                                                        Nothing -> throwError $ "Undefined variable " ++ name
   collect (ETuple es) = do (types, constraints) <- unzip <$> mapM collect es
-                           return (TTuple types, combineMaybes CConj constraints)
+                           return (TTuple types, conj constraints)
   collect (ECall e es) = do
     (tau, c) <- collect e
     (taus, cs) <- unzip <$> mapM collect es
     beta <- tVar
     alpha <- tVar
     alphas <- mapM (const tVar) taus
-    let c0 = Just $ tau `CEq` TFun taus alpha
-        c1 = Just $ beta `CSubtype` alpha
-        c2 = Just $ foldr1 CConj $ zipWith CSubtype taus alphas
-        c3 = combineMaybes CConj (c : cs)
-    return (beta, combineMaybes CConj [c0, c1, c2, c3])
+    let c0 = tau `CEq` TFun taus alpha
+        c1 = beta `CSubtype` alpha
+        c2 = conj $ zipWith CSubtype taus alphas
+        c3 = conj (c : cs)
+    return (beta, conj [c0, c1, c2, c3])
   collect (EFun ns e) = do
     taus <- mapM (const tVar) ns
     (taue, cs) <- local (\env -> foldr (uncurry M.insert) env (zip ns taus)) $ collect e
     tau <- tVar
     -- TODO figure out what to do with bound constraints
     -- return (tau, Just (tau `CEq` (TFun taus taue `TWhen` cs)))
-    return (tau, combineMaybes CConj [Just (tau `CEq` TFun taus taue), cs])
+    return (tau, conj [tau `CEq` TFun taus taue, cs])
   collect (ELet n e1 e2) = do
     (tau1, c1) <- collect e1
     (tau2, c2) <- local (M.insert n tau1) (collect e2)
     trace <- tVarOf n
-    return (tau2, combineMaybes CConj [c1, c2, Just (trace `CEq` tau1)])
+    return (tau2, conj [c1, c2, trace `CEq` tau1])
   collect (ELetRec bs e) = do
     let (names, es) = unzip bs
     taus <- mapM (const tVar) names
@@ -109,7 +110,7 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     let env' = foldr (uncurry M.insert) env (zip names taus)
     (tau's, constraints) <- unzip <$> local (const env') (mapM collect es)
     (taue, constrainte) <- local (const env') (collect e)
-    return (taue, combineMaybes CConj (zipWith (\l r -> Just $ l `CEq` r) tau's taus ++ constrainte : constraints))
+    return (taue, conj (zipWith CEq tau's taus ++ constrainte : constraints))
   collect (ECase e pges) = do
     let (ps, gs, es) = unzip3 pges
     (tau, ce) <- collect e
@@ -120,13 +121,13 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     let env's = map (\pi -> foldr (uncurry M.insert) env (zip pi taus)) psvars
     (ais, cpis) <- unzip <$> mapM (\(env'i, pi, gi) -> local (const env'i) (collectP pi gi)) (zip3 env's ps gs)
     (bis, cbis) <- unzip <$> mapM (\(env'i, bi) -> local (const env'i) (collect bi)) (zip env's es)
-    let ci ai bi cpi cbi = combineMaybes CConj [Just (beta `CEq` bi), Just (tau `CEq` ai), cpi, cbi]
-    return (beta, combineMaybes CConj [ce, combineMaybes CDisj (zipWith4 ci ais bis cpis cbis)])
+    let ci ai bi cpi cbi = conj [beta `CEq` bi, tau `CEq` ai, cpi, cbi]
+    return (beta, conj [ce, disj (zipWith4 ci ais bis cpis cbis)])
 
   collectP pat guard = do
     tau <- patType pat
     (tg, cg) <- collect guard
-    return (tau, combineMaybes CConj [cg, Just (tg `CEq` TBool)])
+    return (tau, conj [cg, tg `CEq` TBool])
 
   tVar :: ExceptT String (GenT Integer (Reader (M.Map Name T))) T
   tVar = TVar . show <$> gen
@@ -144,6 +145,7 @@ varsInT (TUnion l r) = varsInT l ++ varsInT r
 varsInT _ = []
 
 varsInC :: C -> [T]
+varsInC (CTrivial) = []
 varsInC (CSubtype l r) = varsInT l ++ varsInT r
 varsInC (CEq l r) = varsInT l ++ varsInT r
 varsInC (CConj l r) = varsInC l ++ varsInC r
@@ -180,7 +182,8 @@ valType :: V -> T
 valType (VBool _) = TBool
 valType (VInt _) = TInt
 
-combineMaybes :: (a -> a -> a) -> [Maybe a] -> Maybe a
-combineMaybes f as = case catMaybes as of
-  [] -> Nothing
-  as' -> Just $ foldr1 f as'
+conj :: [C] -> C
+conj cs = foldr CConj CTrivial cs
+
+disj :: [C] -> C
+disj cs = foldr CDisj CTrivial cs

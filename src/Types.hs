@@ -40,7 +40,8 @@ data T =
   deriving (Eq, Ord)
 
 data C =
-    CSubtype T T
+    CTrivial
+  | CSubtype T T
   | CEq T T
   | CConj C C
   | CDisj C C
