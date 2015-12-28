@@ -47,7 +47,6 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
 
   solve' (Just sol) c@(CSubtype l@(TVar _) r) = return $ Just $ M.insert l (glb (sol # l) (sol # r)) sol
   solve' (Just sol) c@(CSubtype (TTuple ls) r) | (TTuple rs) <- sol # r, length ls == length rs = solve' (Just sol) $ CConj $ zipWith CSubtype ls rs
-  -- solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solve' (Just sol) $ foldr1 CConj (zipWith CSubtype la ra) `CConj` (lb `CSubtype` rb)
   solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solve' (Just sol) $ CConj $ (lb `CSubtype` rb) : zipWith CSubtype la ra
   solve' (Just sol) c@(CSubtype l r) | (sol # l) `isSubtype` (sol # r) = return $ Just sol
   solve' (Just sol) c@(CSubtype _ _) = Left $ "Can't solve " ++ show c ++ " with sol\n" ++ prettyMap sol
