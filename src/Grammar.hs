@@ -121,11 +121,12 @@ instance Show T where
     show (TInt)       = "int()"
 
 cToTree :: C -> Tree String
-cToTree (CTrivial) = Node "trivial" []
-cToTree (CSubtype l r) = Node (show l ++ " < " ++ show r) []
-cToTree (CEq      l r) = Node (show l ++ " = " ++ show r) []
-cToTree (CConj    cs) = Node "conj" $ map cToTree cs
-cToTree (CDisj    cs) = Node "disj" $ map cToTree cs
+cToTree (CConj cs) = Node "conj" $ map cToTree cs
+cToTree (CDisj cs) = Node "disj" $ map cToTree cs
+cToTree c          = Node (show c) []
 
 instance Show C where
+    show (CTrivial) = "trivial"
+    show (CSubtype l r) = show l ++ " < " ++ show r
+    show (CEq      l r) = show l ++ " = " ++ show r
     show c = drawTree $ cToTree c
