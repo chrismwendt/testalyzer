@@ -1,8 +1,7 @@
 {-# LANGUAGE TemplateHaskell, TypeOperators, OverloadedStrings #-}
 
 module Grammar
-    (
-      module Grammar
+    ( module Grammar
     , module Text.Megaparsec
     ) where
 
@@ -41,9 +40,9 @@ v = oneOf [ VInt . fromIntegral <$> integer
 
 p :: Parser P
 p = oneOf [ PVal   <$> v
-            , PName  <$> name
-            , PTuple <$> tupleOf p
-            ]
+          , PName  <$> name
+          , PTuple <$> tupleOf p
+          ]
 
 e :: Parser E
 e = oneOf [ EVal    <$> v
