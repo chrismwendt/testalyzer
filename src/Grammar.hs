@@ -37,7 +37,8 @@ oneOf = foldr1 (\a b -> try a <|> b)
 v :: Parser V
 v = oneOf [ VInt . fromIntegral <$> integer
           , VBool False         <$  s "false"
-          , VBool True          <$  s "true" ]
+          , VBool True          <$  s "true"
+          ]
 
 p :: Parser P
 p = oneOf [ PVal   <$> v
