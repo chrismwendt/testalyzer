@@ -35,21 +35,23 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   solve' :: Sol -> C -> Either String Sol
   solve' Nothing _ = Right Nothing
   solve' sol CTrivial = Right sol
-  solve' sol c@(CEq l r) = solve' sol $ CConj [l `CSubtype` r, r `CSubtype` l]
+  solve' sol c@(CEq l r) = solveReason sol $ CConj [l `CSubtype` r, r `CSubtype` l]
   solve' sol c@(CConj cs) = do
-    sol' <- foldrM (flip solve') sol cs
-    if sol == sol' then Right sol else solve' sol' c
+    sol' <- foldrM (flip solveReason) sol cs
+    if sol == sol' then Right sol else solveReason sol' c
   solve' sol (CDisj cs) = do
-    sols <- mapM (solve' sol) cs
+    sols <- mapM (solveReason sol) cs
     case catMaybes sols of
       [] -> Right Nothing
       sols' -> Right $ Just $ M.unionsWith lub sols'
 
   solve' (Just sol) c@(CSubtype l@(TVar _) r) = return $ Just $ M.insert l (glb (sol # l) (sol # r)) sol
-  solve' (Just sol) c@(CSubtype (TTuple ls) r) | (TTuple rs) <- sol # r, length ls == length rs = solve' (Just sol) $ CConj $ zipWith CSubtype ls rs
-  solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solve' (Just sol) $ CConj $ (lb `CSubtype` rb) : zipWith CSubtype la ra
+  solve' (Just sol) c@(CSubtype (TTuple ls) r) | (TTuple rs) <- sol # r, length ls == length rs = solveReason (Just sol) $ CConj $ zipWith CSubtype ls rs
+  solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solveReason (Just sol) $ CConj $ (lb `CSubtype` rb) : zipWith CSubtype la ra
   solve' (Just sol) c@(CSubtype l r) | (sol # l) `isSubtype` (sol # r) = return $ Just sol
-  solve' (Just sol) c@(CSubtype _ _) = Left $ "Can't solve " ++ show c ++ " with sol\n" ++ prettyMap sol
+  solve' (Just sol) c@(CSubtype l r) = Left $ show l ++ " is not a subtype of " ++ show r
+
+  solveReason sol c = left (\x -> "Can't solve " ++ show c ++ " because:\n\n" ++ x) $ solve' sol c
 
   (#) sol t@(TVar _) = sol # fromMaybe (error "y var not defined?") (M.lookup t sol)
   (#) sol (TTuple ts) = TTuple (map (sol #) ts)
