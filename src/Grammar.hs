@@ -14,6 +14,7 @@ import Data.String
 import Control.Applicative
 import Data.Functor
 import Data.List
+import Data.Tree
 
 parse :: Stream s t => Parsec s a -> s -> Either ParseError a
 parse p = runParser (p <* eof) ""
@@ -119,9 +120,12 @@ instance Show T where
     show (TBool)      = "bool()"
     show (TInt)       = "int()"
 
+cToTree :: C -> Tree String
+cToTree (CTrivial) = Node "trivial" []
+cToTree (CSubtype l r) = Node (show l ++ " < " ++ show r) []
+cToTree (CEq      l r) = Node (show l ++ " = " ++ show r) []
+cToTree (CConj    cs) = Node "conj" $ map cToTree cs
+cToTree (CDisj    cs) = Node "disj" $ map cToTree cs
+
 instance Show C where
-    show (CTrivial) = "trivial"
-    show (CSubtype l r) = showPair l " < " r
-    show (CEq      l r) = showPair l " = " r
-    show (CConj    cs) = intercalate " ^ " (map show cs)
-    show (CDisj    cs) = intercalate " v " (map show cs)
+    show c = drawTree $ cToTree c
