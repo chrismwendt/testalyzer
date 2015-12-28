@@ -1,1 +1,4 @@
-let and = fun(l,r) -> case <l,r> of <true,true> when true -> true;<false,x> when true -> false;<x,false> when true -> false end in 3
+let and = fun(l,r) -> case <l,r> of <true,true> when true -> true;<false,x> when true -> false;<x,false> when true -> false end in !and(4,3)
+let foo = fun(x) -> case <x> of <y> when true -> true end in !foo(3)
+let bad = fun(a,b) -> case <a,b> of <true,true> when true -> true end in !bad(3,true)
+let good = fun(a,b) -> case <a,b> of <3,true> when true -> true end in !good(3,true)

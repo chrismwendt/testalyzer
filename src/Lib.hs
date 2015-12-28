@@ -24,8 +24,11 @@ main = do
         let p = left show (parse e line)
         let cs = simplify <$> (p >>= constraints)
         let thing = cs >>= solve
-        print cs
-        putStrLn (either id (maybe "No solution" prettyMap) thing)
+        -- print cs
+        -- putStrLn (either id (maybe "No solution" prettyMap) thing)
+        case thing of
+            Left reason -> print $ "Failure: " ++ line
+            Right result -> print $ "Success: " ++ line
 
 -- TODO initialize environment with primitive functions like is_atom
 
