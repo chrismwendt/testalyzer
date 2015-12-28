@@ -25,7 +25,7 @@ main = do
         let cs = simplify <$> (p >>= constraints)
         let thing = cs >>= solve
         print cs
-        putStrLn (either show (maybe "No solution" prettyMap) thing)
+        putStrLn (either id (maybe "No solution" prettyMap) thing)
 
 -- TODO initialize environment with primitive functions like is_atom
 
@@ -50,7 +50,7 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   -- solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solve' (Just sol) $ foldr1 CConj (zipWith CSubtype la ra) `CConj` (lb `CSubtype` rb)
   solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solve' (Just sol) $ CConj $ (lb `CSubtype` rb) : zipWith CSubtype la ra
   solve' (Just sol) c@(CSubtype l r) | (sol # l) `isSubtype` (sol # r) = return $ Just sol
-  solve' (Just sol) c@(CSubtype _ _) = Left $ "Can't solve " ++ show c ++ " with sol " ++ show sol
+  solve' (Just sol) c@(CSubtype _ _) = Left $ "Can't solve " ++ show c ++ " with sol\n" ++ prettyMap sol
 
   (#) sol t@(TVar _) = sol # fromMaybe (error "y var not defined?") (M.lookup t sol)
   (#) sol (TTuple ts) = TTuple (map (sol #) ts)
