@@ -92,7 +92,7 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     beta <- tVar
     alpha <- tVar
     alphas <- mapM (const tVar) taus
-    let c0 = tau `CEq` TFun taus alpha
+    let c0 = TFun taus alpha `CSubtype` tau
         c1 = beta `CSubtype` alpha
         c2 = CConj $ zipWith CSubtype taus alphas
         c3 = CConj (c : cs)
