@@ -1,0 +1,1 @@
+let and = fun(l,r) -> case <l,r> of <true,true> when true -> true;<false,x> when true -> false;<x,false> when true -> false end in 3

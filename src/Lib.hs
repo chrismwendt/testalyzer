@@ -1,11 +1,10 @@
 {-# LANGUAGE LambdaCase #-}
 
 module Lib
-    ( module Grammar
+    ( module Lib
+    , module Grammar
     ) where
 
-import Prelude hiding (showList, (.), id)
-import Control.Category ((.))
 import Data.List
 import qualified Data.Map as M
 import Control.Monad.Gen
@@ -14,6 +13,14 @@ import Control.Monad.Except
 import Data.Maybe
 import Types
 import Grammar
+import Control.Arrow
+
+main :: IO ()
+main = do
+    a <- readFile "0.txt"
+    forM_ (lines a) $ \line -> do
+        let thing = left show (parse e line) >>= constraints
+        print thing
 
 -- TODO initialize environment with primitive functions like is_atom
 
