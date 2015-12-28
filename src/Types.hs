@@ -43,8 +43,8 @@ data C =
     CTrivial
   | CSubtype T T
   | CEq T T
-  | CConj C C
-  | CDisj C C
+  | CConj [C]
+  | CDisj [C]
   deriving (Eq, Ord)
 
 -- environment lookups default to any()

@@ -69,8 +69,8 @@ t = oneOf [ TNone  <$  s "none()"
 c :: Parser C
 c = oneOf [ uncurry CSubtype <$> t `sepPair` " < "
           , uncurry CEq      <$> t `sepPair` " = "
-          , uncurry CConj    <$> c `sepPair` " ^ "
-          , uncurry CDisj    <$> c `sepPair` " v "
+          , CConj            <$> c `sepBy` s " ^ "
+          , CDisj            <$> c `sepBy` s " v "
           ]
     where
     sepPair v sp = (,) <$ s "(" <*> v <* s sp <*> v <* s ")"
@@ -120,7 +120,8 @@ instance Show T where
     show (TInt)       = "int()"
 
 instance Show C where
+    show (CTrivial) = "trivial"
     show (CSubtype l r) = showPair l " < " r
     show (CEq      l r) = showPair l " = " r
-    show (CConj    l r) = showPair l " ^ " r
-    show (CDisj    l r) = showPair l " v " r
+    show (CConj    cs) = intercalate " ^ " (map show cs)
+    show (CDisj    cs) = intercalate " v " (map show cs)

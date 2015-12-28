@@ -14,13 +14,16 @@ import Data.Maybe
 import Types
 import Grammar
 import Control.Arrow
+import Data.Foldable
 
 main :: IO ()
 main = do
     a <- readFile "0.txt"
     forM_ (lines a) $ \line -> do
-        let thing = left show (parse e line) >>= constraints >>= solve
-        print thing
+        let p = left show (parse e line)
+        let cs = p >>= constraints
+        let thing = cs >>= solve
+        print (cs, thing)
 
 -- TODO initialize environment with primitive functions like is_atom
 
@@ -30,20 +33,20 @@ solve c = solve' (Just $ foldr (`M.insert` TAny) M.empty $ varsInC c) c
   solve' :: Sol -> C -> Either String Sol
   solve' Nothing _ = Right Nothing
   solve' sol CTrivial = Right sol
-  solve' sol c@(CEq l r) = solve' sol ((l `CSubtype` r) `CConj` (r `CSubtype` l))
-  solve' sol c@(CConj l r) = do
-    sol' <- solve' sol l >>= flip solve' r
+  solve' sol c@(CEq l r) = solve' sol $ CConj [l `CSubtype` r, r `CSubtype` l]
+  solve' sol c@(CConj cs) = do
+    sol' <- foldrM (flip solve') sol cs
     if sol == sol' then Right sol else solve' sol' c
-  solve' sol (CDisj l r) = do
-    soll <- solve' sol l
-    solr <- solve' sol r
-    case catMaybes [soll, solr] of
+  solve' sol (CDisj cs) = do
+    sols <- mapM (solve' sol) cs
+    case catMaybes sols of
       [] -> Right Nothing
-      sols -> Right $ Just $ M.unionsWith lub sols
+      sols' -> Right $ Just $ M.unionsWith lub sols'
 
   solve' (Just sol) c@(CSubtype l@(TVar _) r) = return $ Just $ M.insert l (glb (sol # l) (sol # r)) sol
-  solve' (Just sol) c@(CSubtype (TTuple ls) r) | (TTuple rs) <- sol # r, length ls == length rs = solve' (Just sol) $ foldr1 CConj $ zipWith CSubtype ls rs
-  solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solve' (Just sol) $ foldr1 CConj (zipWith CSubtype la ra) `CConj` (lb `CSubtype` rb)
+  solve' (Just sol) c@(CSubtype (TTuple ls) r) | (TTuple rs) <- sol # r, length ls == length rs = solve' (Just sol) $ CConj $ zipWith CSubtype ls rs
+  -- solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solve' (Just sol) $ foldr1 CConj (zipWith CSubtype la ra) `CConj` (lb `CSubtype` rb)
+  solve' (Just sol) c@(CSubtype (TFun la lb) r) | (TFun ra rb) <- sol # r, length la == length ra = solve' (Just sol) $ CConj $ (lb `CSubtype` rb) : zipWith CSubtype la ra
   solve' (Just sol) c@(CSubtype l r) | (sol # l) `isSubtype` (sol # r) = return $ Just sol
   solve' (Just sol) c@(CSubtype _ _) = Left $ "Can't solve " ++ show c ++ " with sol " ++ show sol
 
@@ -79,7 +82,7 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
   collect (EVar name) = asks (M.lookup name) >>= \case Just y -> return (y, CTrivial)
                                                        Nothing -> throwError $ "Undefined variable " ++ name
   collect (ETuple es) = do (types, constraints) <- unzip <$> mapM collect es
-                           return (TTuple types, conj constraints)
+                           return (TTuple types, CConj constraints)
   collect (ECall e es) = do
     (tau, c) <- collect e
     (taus, cs) <- unzip <$> mapM collect es
@@ -88,21 +91,21 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     alphas <- mapM (const tVar) taus
     let c0 = tau `CEq` TFun taus alpha
         c1 = beta `CSubtype` alpha
-        c2 = conj $ zipWith CSubtype taus alphas
-        c3 = conj (c : cs)
-    return (beta, conj [c0, c1, c2, c3])
+        c2 = CConj $ zipWith CSubtype taus alphas
+        c3 = CConj (c : cs)
+    return (beta, CConj [c0, c1, c2, c3])
   collect (EFun ns e) = do
     taus <- mapM (const tVar) ns
     (taue, cs) <- local (\env -> foldr (uncurry M.insert) env (zip ns taus)) $ collect e
     tau <- tVar
     -- TODO figure out what to do with bound constraints
     -- return (tau, Just (tau `CEq` (TFun taus taue `TWhen` cs)))
-    return (tau, conj [tau `CEq` TFun taus taue, cs])
+    return (tau, CConj [tau `CEq` TFun taus taue, cs])
   collect (ELet n e1 e2) = do
     (tau1, c1) <- collect e1
     (tau2, c2) <- local (M.insert n tau1) (collect e2)
     trace <- tVarOf n
-    return (tau2, conj [c1, c2, trace `CEq` tau1])
+    return (tau2, CConj [c1, c2, trace `CEq` tau1])
   collect (ELetRec bs e) = do
     let (names, es) = unzip bs
     taus <- mapM (const tVar) names
@@ -110,7 +113,7 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     let env' = foldr (uncurry M.insert) env (zip names taus)
     (tau's, constraints) <- unzip <$> local (const env') (mapM collect es)
     (taue, constrainte) <- local (const env') (collect e)
-    return (taue, conj (zipWith CEq tau's taus ++ constrainte : constraints))
+    return (taue, CConj (zipWith CEq tau's taus ++ constrainte : constraints))
   collect (ECase e pges) = do
     let (ps, gs, es) = unzip3 pges
     (tau, ce) <- collect e
@@ -121,13 +124,13 @@ constraints = flip runReader M.empty . runGenT . runExceptT . (fmap snd <$> coll
     let env's = map (\pi -> foldr (uncurry M.insert) env (zip pi taus)) psvars
     (ais, cpis) <- unzip <$> mapM (\(env'i, pi, gi) -> local (const env'i) (collectP pi gi)) (zip3 env's ps gs)
     (bis, cbis) <- unzip <$> mapM (\(env'i, bi) -> local (const env'i) (collect bi)) (zip env's es)
-    let ci ai bi cpi cbi = conj [beta `CEq` bi, tau `CEq` ai, cpi, cbi]
-    return (beta, conj [ce, disj (zipWith4 ci ais bis cpis cbis)])
+    let ci ai bi cpi cbi = CConj [beta `CEq` bi, tau `CEq` ai, cpi, cbi]
+    return (beta, CConj [ce, CDisj (zipWith4 ci ais bis cpis cbis)])
 
   collectP pat guard = do
     tau <- patType pat
     (tg, cg) <- collect guard
-    return (tau, conj [cg, tg `CEq` TBool])
+    return (tau, CConj [cg, tg `CEq` TBool])
 
   tVar :: ExceptT String (GenT Integer (Reader (M.Map Name T))) T
   tVar = TVar . show <$> gen
@@ -148,8 +151,8 @@ varsInC :: C -> [T]
 varsInC (CTrivial) = []
 varsInC (CSubtype l r) = varsInT l ++ varsInT r
 varsInC (CEq l r) = varsInT l ++ varsInT r
-varsInC (CConj l r) = varsInC l ++ varsInC r
-varsInC (CDisj l r) = varsInC l ++ varsInC r
+varsInC (CConj cs) = concatMap varsInC cs
+varsInC (CDisj cs) = concatMap varsInC cs
 
 isStrictSubtype :: T -> T -> Bool
 isStrictSubtype l r | l == r = False
@@ -181,9 +184,3 @@ patType (PTuple ps) = TTuple <$> mapM patType ps
 valType :: V -> T
 valType (VBool _) = TBool
 valType (VInt _) = TInt
-
-conj :: [C] -> C
-conj cs = foldr CConj CTrivial cs
-
-disj :: [C] -> C
-disj cs = foldr CDisj CTrivial cs
