@@ -15,6 +15,7 @@ import Types
 import Grammar
 import Control.Arrow
 import Data.Foldable
+import Data.Either
 
 main :: IO ()
 main = do
@@ -24,7 +25,7 @@ main = do
         let cs = simplify <$> (p >>= constraints)
         let thing = cs >>= solve
         print cs
-        print thing
+        putStrLn (either show (maybe "No solution" prettyMap) thing)
 
 -- TODO initialize environment with primitive functions like is_atom
 
@@ -201,3 +202,6 @@ simplify c = c
     where
     isConj (CConj _) = True
     isConj _         = False
+
+prettyMap :: (Show a, Show b) => M.Map a b -> String
+prettyMap m = unlines $ map (\(k, v) -> show k ++ " = " ++ show v) $ M.assocs m
