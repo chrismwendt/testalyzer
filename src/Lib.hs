@@ -21,9 +21,10 @@ main = do
     a <- readFile "0.txt"
     forM_ (lines a) $ \line -> do
         let p = left show (parse e line)
-        let cs = p >>= constraints
+        let cs = simplify <$> (p >>= constraints)
         let thing = cs >>= solve
-        print (cs, thing)
+        print cs
+        print thing
 
 -- TODO initialize environment with primitive functions like is_atom
 
@@ -184,3 +185,19 @@ patType (PTuple ps) = TTuple <$> mapM patType ps
 valType :: V -> T
 valType (VBool _) = TBool
 valType (VInt _) = TInt
+
+simplify :: C -> C
+simplify (CConj cs) = let cs' = map simplify cs
+                          _  = [c | c@(CTrivial)     <- cs']
+                          ss = [c | c@(CSubtype _ _) <- cs']
+                          es = [c | c@(CEq _ _)      <- cs']
+                          ns = [n | c@(CConj n)      <- cs']
+                          ds = [c | c@(CDisj _)      <- cs']
+                      in CConj $ ss ++ es ++ concat ns ++ ds
+simplify (CDisj cs) = CDisj (map simplify cs)
+simplify c@(CEq l r) | l == r = CTrivial
+                     | otherwise = c
+simplify c = c
+    where
+    isConj (CConj _) = True
+    isConj _         = False
