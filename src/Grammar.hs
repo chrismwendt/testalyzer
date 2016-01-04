@@ -94,7 +94,7 @@ showListWith s as = "(" ++ sepString s as ++ ")"
 
 instance Show E where
     show (EVal v)       = show v
-    show (EVar name)    = name
+    show (EVar name)    = "n" ++ name
     show (ETuple es)    = showTuple es
     show (ECall e es)   = "!" ++ show e ++ showList es
     show (EFun ns e)    = "fun(" ++ intercalate "," ns ++ ") -> " ++ show e

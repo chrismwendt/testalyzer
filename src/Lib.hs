@@ -30,6 +30,11 @@ main = do
             Left reason -> print $ "Failure: " ++ line
             Right result -> print $ "Success: " ++ line
 
+mainsr :: IO ()
+mainsr = do
+    lines <- lines <$> readFile "0.txt"
+    mapM_ (print . parse e) lines
+
 -- TODO initialize environment with primitive functions like is_atom
 
 solve :: C -> Either String Sol
